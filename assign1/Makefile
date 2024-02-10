@@ -1,3 +1,3 @@
 # Run inverseMatrix.c
-inverseMatrix: inverseMatrix.c
-	xcrun /opt/opencilk/bin/clang -fopencilk -O3 inverseMatrix.c -o inverseMatrix
+inverseMatrix: inverseMatrix.cpp
+	xcrun /opt/opencilk/bin/clang++ -fopencilk -O3 inverseMatrix.cpp -o inverseMatrix
