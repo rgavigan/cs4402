@@ -90,7 +90,7 @@ std::vector<std::vector<double>> getLowerTriangularInverse(std::vector<std::vect
 
     // Computing A1 and A3 inverses
     std::vector<std::vector<double>> A_1_inv = cilk_spawn getLowerTriangularInverse(A_1, B);
-    std::vector<std::vector<double>> A_3_inv = getLowerTriangularInverse(A_3, B);
+    std::vector<std::vector<double>> A_3_inv = cilk_spawn getLowerTriangularInverse(A_3, B);
     cilk_sync;
 
     // Computing A2 inverse
@@ -227,6 +227,44 @@ void performanceTests() {
             }
         }
     }
+
+    // Create LaTeX table for performance tests
+    std::cout << "LaTeX Table for Performance Tests:" << std::endl;
+    std::cout << "\\begin{tabular}{|c|c|c|c|}" << std::endl;
+    std::cout << "\\hline" << std::endl;
+    std::cout << "n & B & Time & Success \\\\" << std::endl;
+    std::cout << "\\hline" << std::endl;
+    for (int i = 0; i < n.size(); i++) {
+        std::vector<std::vector<double>> A = generateRandomMatrix(n[i]);
+        for (int j = 0; j < B.size(); j++) {
+            clock_t start = clock();
+            std::vector<std::vector<double>> A_inv = getLowerTriangularInverse(A, B[j]);
+            clock_t end = clock();
+            double time = (double)(end - start) / CLOCKS_PER_SEC;
+            std::cout << n[i] << " & " << B[j] << " & " << time << " & ";
+
+            // Check that M * M^-1 = I and print success if so
+            std::vector<std::vector<double>> I = multiplyMatrices(A, A_inv);
+            bool success = true;
+            for (int k = 0; k < I.size(); k++) {
+                for (int l = 0; l < I[0].size(); l++) {
+                    if (k == l) {
+                        if (I[k][l] - 1 > 0.000001) {
+                            success = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (success) {
+                std::cout << "Success \\\\" << std::endl;
+            } else {
+                std::cout << "Failure \\\\" << std::endl;
+            }
+        }
+    }
+    std::cout << "\\hline" << std::endl;
+    std::cout << "\\end{tabular}" << std::endl;
 }
 
 int main() {
