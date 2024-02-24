@@ -6,151 +6,24 @@
 #include <time.h>
 
 /**
- * Function to perform matrix multiplication
-*/
-std::vector<std::vector<double>> multiplyMatrices(std::vector<std::vector<double>> M1, std::vector<std::vector<double>> M2) {
-    int rows1 = M1.size(), cols1 = M1[0].size();
-    int rows2 = M2.size(), cols2 = M2[0].size();
-
-    // Error Handling: Ensure the matrices can be multiplied
-    if (cols1 != rows2) {
-        std::cout << "The matrices cannot be multiplied" << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<double>> result(rows1, std::vector<double>(cols2, 0));
-
-    // Multiplication
-    cilk_for (int i = 0; i < rows1; i++) {
-        for (int j = 0; j < cols2; j++) {
-            for (int k = 0; k < cols1; k++) {
-                result[i][j] += M1[i][k] * M2[k][j];
-            }
-        }
-    }
-    return result;
-}
-
-/**
- * Function to get the inverse of a n*n lower triangular matrix
- * Used to compute A_1^-1 and A_3^-1 to then obtain A^-1
-*/
-std::vector<std::vector<double>> getLowerTriangularInverse(std::vector<std::vector<double>> M, int B) {
-    int rows = M.size(), cols = M[0].size();
-
-    // Base Case: Ensure the matrix is square
-    if (rows != cols) {
-        std::cout << "The matrix is not square" << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<double>> result(rows, std::vector<double>(cols, 0));
-
-    // Base Case: Sequentially compute inverse when the matrix is small enough
-    if (rows <= B) {
-        for (int i = 0; i < rows; i++) {
-            for (int j = 0; j <= i; j++) {
-                if (i == j) {
-                    result[i][j] = 1 / M[i][j];
-                } else {
-                    double sum = 0;
-                    for (int k = j; k < i; k++) {
-                        sum += M[i][k] * result[k][j];
-                    }
-                    result[i][j] = -sum / M[i][i];
-                }
-            }
-        }
-        return result;
-    }
-
-    // Top-left quarter of the matrix
-    std::vector<std::vector<double>> A_1(B, std::vector<double>(B, 0));
-    for (int i = 0; i < B; i++) {
-        for (int j = 0; j < B; j++) {
-            A_1[i][j] = M[i][j];
-        }
-    }
-
-    // Bottom-left quarter of the matrix
-    std::vector<std::vector<double>> A_2(rows - B, std::vector<double>(B, 0));
-    for (int i = B; i < rows; i++) {
-        for (int j = 0; j < B; j++) {
-            A_2[i - B][j] = M[i][j];
-        }
-    }
-
-    // Bottom-right quarter of the matrix
-    std::vector<std::vector<double>> A_3(rows - B, std::vector<double>(rows - B, 0));
-    for (int i = B; i < rows; i++) {
-        for (int j = B; j < rows; j++) {
-            A_3[i - B][j - B] = M[i][j];
-        }
-    }
-
-    // Computing A1 and A3 inverses
-    std::vector<std::vector<double>> A_1_inv = cilk_spawn getLowerTriangularInverse(A_1, B);
-    std::vector<std::vector<double>> A_3_inv = cilk_spawn getLowerTriangularInverse(A_3, B);
-    cilk_sync;
-
-    // Computing A2 inverse
-    std::vector<std::vector<double>> bottom_left = multiplyMatrices(A_3_inv, A_2);
-    bottom_left = multiplyMatrices(bottom_left, A_1_inv);
-
-    for (int i = 0; i < bottom_left.size(); i++) {
-        for (int j = 0; j < bottom_left[0].size(); j++) {
-            bottom_left[i][j] = -bottom_left[i][j];
-        }
-    }
-
-    // Top Left: A_1^-1
-    for (int i = 0; i < B; i++) {
-        for (int j = 0; j < B; j++) {
-            result[i][j] = A_1_inv[i][j];
-        }
-    }
-    // Top Right: 0
-    for (int i = 0; i < B; i++) {
-        for (int j = B; j < cols; j++) {
-            result[i][j] = 0;
-        }
-    }
-    // Bottom Right: A_3^-1
-    for (int i = B; i < rows; i++) {
-        for (int j = B; j < cols; j++) {
-            result[i][j] = A_3_inv[i - B][j - B];
-        }
-    }
-    // Bottom Left: -A_3^-1 * A_2 * A_1^-1
-    for (int i = B; i < rows; i++) {
-        for (int j = 0; j < B; j++) {
-            result[i][j] = bottom_left[i - B][j];
-        }
-    }
-    
-    return result;
-}
-
-/**
- * Generate a random 4x4 lower-triangular matrix with values between 1/10 and 10 using rand
+ * Helper that generates a random lower-triangular matrix for testing
 */
 std::vector<std::vector<double>> generateRandomMatrix(int size) {
-    std::vector<std::vector<double>> result(size, std::vector<double>(size, 0));
+    std::vector<std::vector<double>> M(size, std::vector<double>(size, 0));
     for (int i = 0; i < size; i++) {
         for (int j = 0; j <= i; j++) {
-            result[i][j] = (rand() % 100 + 1) / 10.0;
+            M[i][j] = (rand() % 100 + 1) / 10.0;
         }
     }
-    return result;
+    return M;
 }
 
 /**
- * Print out a matrix
+ * Helper that prints out a matrix
 */
 void printMatrix(std::vector<std::vector<double>> M) {
     for (int i = 0; i < M.size(); i++) {
         for (int j = 0; j < M[0].size(); j++) {
-            // Handle -0 and epsilon value for 0
             if (M[i][j] == -0 || M[i][j] - 0 < 0.000001) {
                 M[i][j] = 0;
             }
@@ -161,75 +34,120 @@ void printMatrix(std::vector<std::vector<double>> M) {
     std::cout << std::endl;
 }
 
+void mm_loop_serial1(int* C, int* A, int* B, int n)
+{
+    for (int i = 0; i < n; ++i){
+        for (int j = 0; j < n; ++j){
+            for (int k = 0; k < n; ++k){
+                C[i * n + j] = C[i * n + j] + (A[i * n + k] * B[k * n + j]);
+            }
+        }
+    }
+}
+
+void mm_loop_serial2(int* C, int k0, int k1, int* A, int i0, int i1, int* B, int j0, int j1,  int n)
+{
+	for (int i = i0; i < i1; i++){
+		for (int j = j0; j < j1; j++) {
+            for (int k = k0; k < k1; k++) {
+                C[i * n + j] += A[i * n + k] * B[k * n + j];
+            }
+        }
+    }
+}
+
+void serial_dandc(int i0, int i1, int j0, int j1, int k0, int k1, int* A, int lda, int* B, int ldb, int* C, int ldc, int X)
+{
+    int di = i1 - i0;
+    int dj = j1 - j0;
+    int dk = k1 - k0;
+
+    if (di >= dj && di >= dk && di >= X) {
+        int mi = i0 + di / 2;
+        serial_dandc(i0, mi, j0, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+        serial_dandc(mi, i1, j0, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+    } 
+    else if (dj >= dk && dj >= X) {
+        int mj = j0 + dj / 2;
+        serial_dandc(i0, i1, j0, mj, k0, k1, A, lda, B, ldb, C, ldc,X);
+        serial_dandc(i0, i1, mj, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+    } 
+    else if (dk >= X) {    
+        int mk = k0 + dk / 2;
+        serial_dandc(i0, i1, j0, j1, k0, mk, A, lda, B, ldb, C, ldc,X);
+        serial_dandc(i0, i1, j0, j1, mk, k1, A, lda, B, ldb, C, ldc,X);
+    } 
+    else {
+        mm_loop_serial2(C, k0, k1,  A, i0, i1, B, j0, j1, lda)  ;
+    }
+}
+
+void parallel_dandc(int i0, int i1, int j0, int j1, int k0, int k1, int* A, int lda, int* B, int ldb, int* C, int ldc, int X)
+{
+    int di = i1 - i0;
+    int dj = j1 - j0;
+    int dk = k1 - k0;
+
+    if (di >= dj && di >= dk && di >= X) {
+        int mi = i0 + di / 2;
+        cilk_spawn parallel_dandc(i0, mi, j0, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+        parallel_dandc(mi, i1, j0, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+        cilk_sync;
+    } 
+    else if (dj >= dk && dj >= X) {
+        int mj = j0 + dj / 2;
+        cilk_spawn parallel_dandc(i0, i1, j0, mj, k0, k1, A, lda, B, ldb, C, ldc,X);
+        parallel_dandc(i0, i1, mj, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+        cilk_sync;
+    } 
+    else if (dk >= X) {    
+        int mk = k0 + dk / 2;
+        parallel_dandc(i0, i1, j0, j1, k0, mk, A, lda, B, ldb, C, ldc,X);
+        parallel_dandc(i0, i1, j0, j1, mk, k1, A, lda, B, ldb, C, ldc,X);
+    } 
+    else {
+        mm_loop_serial2(C, k0, k1,  A, i0, i1, B, j0, j1, lda)  ;
+    }
+}
+
+void invertMatrix(int* A, int n, int B, int i0, int i1, int j0, int j1) {
+    if (i1 - i0 <= B) {
+        serial_dandc(i0, i1, j0, j1, 0, n, A, n, A, n, A, n, B);
+    } else {
+        int mi = i0 + (i1 - i0) / 2;
+        cilk_spawn invertMatrix(A, n, B, i0, mi, j0, j1);
+        invertMatrix(A, n, B, mi, i1, j0, j1);
+        cilk_sync;
+    }
+}
+
+void testInverse(int n, int B) {
+    std::vector<std::vector<double>> A = generateRandomMatrix(n);
+    invertMatrix(A, n, B, 0, n, 0, n);
+    std::cout << "n = " << n << ", B = " << B << std::endl;
+    printMatrix(A);
+}
+
 /**
  * Correctness Tests
  * n = 4
  * B = 4, 2, 1
 */
 void correctnessTests() {
-    std::cout << "First Correctness Check, B = 4:" << std::endl;
-    std::vector<std::vector<double>> A1c = generateRandomMatrix(4);
-    std::vector<std::vector<double>> A1c_inv = getLowerTriangularInverse(A1c, 4);
-    std::vector<std::vector<double>> I = multiplyMatrices(A1c, A1c_inv);
-    std::cout << "A1c * A1c_inv Result:" << std::endl;
-    printMatrix(I);
-
-    std::cout << "Second Correctness Check, B = 2:" << std::endl;
-    std::vector<std::vector<double>> A2c = generateRandomMatrix(4);
-    std::vector<std::vector<double>> A2c_inv = getLowerTriangularInverse(A2c, 2);
-    std::vector<std::vector<double>> I_2 = multiplyMatrices(A2c, A2c_inv);
-    std::cout << "A2c * A2c_inv Result:" << std::endl;
-    printMatrix(I_2);
-
-    std::cout << "Third Correctness Check, B = 1:" << std::endl;
-    std::vector<std::vector<double>> A3c = generateRandomMatrix(4);
-    std::vector<std::vector<double>> A3c_inv = getLowerTriangularInverse(A3c, 1);
-    std::vector<std::vector<double>> I_3 = multiplyMatrices(A3c, A3c_inv);
-    std::cout << "A3c * A3c_inv Result:" << std::endl;
-    printMatrix(I_3);
+    std::cout << "Correctness Tests:" << std::endl;
+    testInverse(4, 4);
+    testInverse(4, 2);
+    testInverse(4, 1);
 }
 
 /**
  * Performance Tests
- * n = 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048
- * B = 32, 64, 128
 */
 void performanceTests() {
     std::vector<int> n = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
     std::vector<int> B = {32, 64, 128};
 
-    for (int i = 0; i < n.size(); i++) {
-        std::vector<std::vector<double>> A = generateRandomMatrix(n[i]);
-        for (int j = 0; j < B.size(); j++) {
-            clock_t start = clock();
-            std::vector<std::vector<double>> A_inv = getLowerTriangularInverse(A, B[j]);
-            clock_t end = clock();
-            double time = (double)(end - start) / CLOCKS_PER_SEC;
-            std::cout << "n = " << n[i] << ", B = " << B[j] << ", Time = " << time << ", ";
-
-            // Check that M * M^-1 = I and print success if so
-            std::vector<std::vector<double>> I = multiplyMatrices(A, A_inv);
-            bool success = true;
-            for (int k = 0; k < I.size(); k++) {
-                for (int l = 0; l < I[0].size(); l++) {
-                    if (k == l) {
-                        if (I[k][l] - 1 > 0.000001) {
-                            success = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (success) {
-                std::cout << "Success" << std::endl;
-            } else {
-                std::cout << "Failure" << std::endl;
-            }
-        }
-    }
-
     // Create LaTeX table for performance tests
-    std::cout << "LaTeX Table for Performance Tests:" << std::endl;
     std::cout << "\\begin{tabular}{|c|c|c|c|}" << std::endl;
     std::cout << "\\hline" << std::endl;
     std::cout << "n & B & Time & Success \\\\" << std::endl;
@@ -238,29 +156,10 @@ void performanceTests() {
         std::vector<std::vector<double>> A = generateRandomMatrix(n[i]);
         for (int j = 0; j < B.size(); j++) {
             clock_t start = clock();
-            std::vector<std::vector<double>> A_inv = getLowerTriangularInverse(A, B[j]);
+            invertMatrix(A, n[i], B[j], 0, n[i], 0, n[i]);
             clock_t end = clock();
             double time = (double)(end - start) / CLOCKS_PER_SEC;
             std::cout << n[i] << " & " << B[j] << " & " << time << " & ";
-
-            // Check that M * M^-1 = I and print success if so
-            std::vector<std::vector<double>> I = multiplyMatrices(A, A_inv);
-            bool success = true;
-            for (int k = 0; k < I.size(); k++) {
-                for (int l = 0; l < I[0].size(); l++) {
-                    if (k == l) {
-                        if (I[k][l] - 1 > 0.000001) {
-                            success = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (success) {
-                std::cout << "Success \\\\" << std::endl;
-            } else {
-                std::cout << "Failure \\\\" << std::endl;
-            }
         }
     }
     std::cout << "\\hline" << std::endl;
@@ -268,20 +167,9 @@ void performanceTests() {
 }
 
 int main() {
-    std::cout << "Inverse of A1 Example:" << std::endl;
     std::vector<std::vector<double>> A1 = {{1, 0, 0, 0}, {-1, 1, 0, 0}, {-1, -1, 1, 0}, {-1, -1, -1, 1}};
-    std::vector<std::vector<double>> A1_inv = getLowerTriangularInverse(A1, 4);
-    printMatrix(A1_inv);
-
-    std::cout << "Inverse of A2 Example:" << std::endl;
     std::vector<std::vector<double>> A2 = {{1, 0, 0, 0}, {-1, 1, 0, 0}, {1, -1, 1, 0}, {1, 1, -1, 1}};
-    std::vector<std::vector<double>> A2_inv = getLowerTriangularInverse(A2, 4);
-    printMatrix(A2_inv);
-
-    std::cout << "Inverse of A3 Example:" << std::endl;
     std::vector<std::vector<double>> A3 = {{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 1, 1, 0}, {1, 1, 1, 1}};
-    std::vector<std::vector<double>> A3_inv = getLowerTriangularInverse(A3, 4);
-    printMatrix(A3_inv);
 
     srand(time(0));
     correctnessTests();
