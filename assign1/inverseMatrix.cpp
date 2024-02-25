@@ -218,8 +218,12 @@ void correctnessTests() {
 }
 
 void performanceTests() {
-    std::vector<int> n = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192};
+    std::vector<int> n = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
     std::vector<int> B = {32, 64, 128};
+
+    // Open CSV file for writing results
+    FILE *fp = fopen("results.csv", "w");
+    fprintf(fp, "n,B,Parallel Time,Serial Time,Speedup\n");
 
     // Create LaTeX table for performance tests
     std::cout << "LaTeX Table for Performance Tests:" << std::endl;
@@ -239,10 +243,11 @@ void performanceTests() {
             std::chrono::duration<double> diff = end - start;
 
             start = std::chrono::high_resolution_clock::now();
-            //getLowerTriangularInverseSerial(A, B[j], 0, 0, n[i], n[i]);
+            getLowerTriangularInverseSerial(A, B[j], 0, 0, n[i], n[i]);
             end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> diffSerial = end - start;
             std::cout << n[i] << " & " << B[j] << " & " << diff.count() << " & " << diffSerial.count() << " & " << diffSerial.count() / diff.count() << " \\\\" << std::endl;
+            fprintf(fp, "%d,%d,%f,%f,%f\n", n[i], B[j], diff.count(), diffSerial.count(), diffSerial.count() / diff.count());
         }
     }
     std::cout << "\\hline" << std::endl;

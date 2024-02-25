@@ -4,7 +4,7 @@ inverseMatrix: inverseMatrix.cpp
 
 # Run closestPairs.c
 closestPairs: closestPairs.cpp
-	/opt/opencilk/bin/clang++ -fopencilk -O3 closestPairs.cpp -o closestPairs
+	/opt/opencilk/bin/clang++ -fopencilk -O2 -g closestPairs.cpp -o closestPairs
 
 # Clean
 clean:
@@ -12,4 +12,4 @@ clean:
 
 # Test
 test: inverseMatrix
-	CILK_NWORKERS=14 ./inverseMatrix
+	CILK_NWORKERS=6 ./inverseMatrix

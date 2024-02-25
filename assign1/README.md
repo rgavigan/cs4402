@@ -1,9 +1,14 @@
 ### Running Problem 1
 ```sh
-make inverseMatrix && chmod 777 ./inverseMatrix && ./inverseMatrix
+make inverseMatrix && ./inverseMatrix
 ```
 
 ### Running Problem 2
 ```sh
-make closestPairs && chmod 777 ./inverseMatrix && ./closestPairs
+make closestPairs && ./closestPairs
+```
+
+### Alternatively, run both problems together
+```sh
+make clean && make inverseMatrix && make closestPairs && make test
 ```
