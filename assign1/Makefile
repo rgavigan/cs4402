@@ -2,9 +2,9 @@
 inverseMatrix: inverseMatrix.cpp
 	/opt/opencilk/bin/clang++ -fopencilk -O3 inverseMatrix.cpp -o inverseMatrix
 
-# Run closestPairProblem.c
-closestPairs: closestPairProblem.cpp
-	/opt/opencilk/bin/clang++ -fopencilk -O3 closestPairProblem.cpp -o closestPairs
+# Run closestPairs.c
+closestPairs: closestPairs.cpp
+	/opt/opencilk/bin/clang++ -fopencilk -O3 closestPairs.cpp -o closestPairs
 
 # Clean
 clean:
