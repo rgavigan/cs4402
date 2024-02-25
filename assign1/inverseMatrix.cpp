@@ -1,4 +1,7 @@
+// Cilk Parallelism
 #include <cilk/cilk.h>
+
+// 
 #include <iostream>
 #include <vector>
 #include <stdio.h>
@@ -6,7 +9,7 @@
 #include <time.h>
 
 /**
- * Helper that generates a random lower-triangular matrix for testing
+ * Generates random matrix of floats from 0.1 -> 10.0
 */
 std::vector<std::vector<double>> generateRandomMatrix(int size) {
     std::vector<std::vector<double>> M(size, std::vector<double>(size, 0));
@@ -19,7 +22,7 @@ std::vector<std::vector<double>> generateRandomMatrix(int size) {
 }
 
 /**
- * Helper that prints out a matrix
+ * Prints out a matrix
 */
 void printMatrix(std::vector<std::vector<double>> M) {
     for (int i = 0; i < M.size(); i++) {
@@ -49,26 +52,27 @@ void printMatrix(std::vector<std::vector<double>> M) {
 */
 void matrixMultiplication(int i0, int i1, int j0, int j1, int k0, int k1, double* A, int lda, double* B, int ldb, double* C, int ldc, int X)
 {
+    // Difference between start/end of i, j, k
     int di = i1 - i0;
     int dj = j1 - j0;
     int dk = k1 - k0;
 
     if (di >= dj && di >= dk && di >= X) {
         int mi = i0 + di / 2;
-        cilk_spawn matrixMultiplication(i0, mi, j0, j1, k0, k1, A, lda, B, ldb, C, ldc,X); // Remove cilk_spawn to run serially
+        cilk_spawn matrixMultiplication(i0, mi, j0, j1, k0, k1, A, lda, B, ldb, C, ldc, X); // Divide for i
         matrixMultiplication(mi, i1, j0, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
         cilk_sync;
     } 
     else if (dj >= dk && dj >= X) {
         int mj = j0 + dj / 2;
-        cilk_spawn matrixMultiplication(i0, i1, j0, mj, k0, k1, A, lda, B, ldb, C, ldc,X); // Remove cilk_spawn to run serially
-        matrixMultiplication(i0, i1, mj, j1, k0, k1, A, lda, B, ldb, C, ldc,X);
+        cilk_spawn matrixMultiplication(i0, i1, j0, mj, k0, k1, A, lda, B, ldb, C, ldc, X); // Divide for j
+        matrixMultiplication(i0, i1, mj, j1, k0, k1, A, lda, B, ldb, C, ldc, X);
         cilk_sync;
     } 
     else if (dk >= X) {    
         int mk = k0 + dk / 2;
-        matrixMultiplication(i0, i1, j0, j1, k0, mk, A, lda, B, ldb, C, ldc,X);
-        matrixMultiplication(i0, i1, j0, j1, mk, k1, A, lda, B, ldb, C, ldc,X);
+        matrixMultiplication(i0, i1, j0, j1, k0, mk, A, lda, B, ldb, C, ldc, X); // Divide for k
+        matrixMultiplication(i0, i1, j0, j1, mk, k1, A, lda, B, ldb, C, ldc, X);
     } 
     else {
         for (int i = i0; i < i1; i++){
@@ -88,98 +92,58 @@ void matrixMultiplication(int i0, int i1, int j0, int j1, int k0, int k1, double
  * n: Size of the matrix
  * B: Base case size
 */
-void matrixInversion() {
-    
-}
-
-/**
- * Function to invert a matrix in-place in serial
- * Matrix: Lower-Triangular n*n matrix
- * n: Size of the matrix
-*/
-void serialInvertMatrix(std::vector<std::vector<double>> &A, int n) {
-    // Invert the top-left quarter of A
-    for (int i = 0; i < n; i++) {
-        A[i][i] = 1 / A[i][i];
-        for (int j = i + 1; j < n; j++) {
-            double sum = 0;
-            for (int k = i; k < j; k++) {
-                sum += A[j][k] * A[k][i];
+void matrixInversion(std::vector<std::vector<double>> &A, int startRow, int endRow, int startCol, int endCol, int B) {
+    // Base Case: Forward Substitution
+    if (endRow - startRow <= B) {
+        for (int i = startRow; i < endRow; i++) {
+            for (int j = startCol; j < i; j++) {
+                for (int k = j; k < i; k++) {
+                    A[i][j] -= A[i][k] * A[k][j];
+                }
             }
-            A[j][i] = -sum / A[j][j];
+            A[i][i] = 1.0 / A[i][i];
         }
+        return;
     }
-
-    // Invert the bottom-right quarter of A
-    for (int i = n - 1; i >= 0; i--) {
-        for (int j = i - 1; j >= 0; j--) {
-            double sum = 0;
-            for (int k = j + 1; k <= i; k++) {
-                sum += A[j][k] * A[k][i];
-            }
-            A[j][i] = -sum;
-        }
-    }
-
-    // Multiply bottom-right by bottom-left using serial_dandc
-    
-
-    // Multiply bottom-left by top-left and store it in bottom-left
-    for (int i = 0; i < n; i++) {
-        for (int j = i; j < n; j++) {
-            double sum = 0;
-            for (int k = j; k < n; k++) {
-                sum += A[j][k] * A[k][i];
-            }
-            A[j][i] = sum;
-        }
-    }
-
-    // Multiply bottom-left by -1 and store it in bottom-left
-    for (int i = 0; i < n; i++) {
-        for (int j = i; j < n; j++) {
-            A[j][i] = -A[j][i];
-        }
-    }
-}
-
-/**
- * Function to invert a matrix in-place in parallel
- * Uses divide-and-conquer algorithm and uses a parallel matrix multiplication algorithm (matrixMultiplication)
- * Matrix: Lower-Triangular n*n matrix
- * n: Size of the matrix
- * startRow: Starting row of the matrix
- * startCol: Starting column of the matrix
- * B: Base case size
-*/
-void parallelInvertMatrix(std::vector<std::vector<double>> &A, int startRow, int startCol, int n, int B) {
-    if (n <= B) {
-        serialInvertMatrix(A, n);
-    } else {
-        int mid = n / 2;
-        cilk_spawn parallelInvertMatrix(A, startRow, startCol, mid, B); // Top-Left
-        parallelInvertMatrix(A, startRow + mid, startCol + mid, n - mid, B); // Bottom-Right
+    // Divide-and-Conquer Parallelism
+    else {
+        // Formula: A = [A11 A12; A21 A22]
+        // A^-1 = [A11^-1 0; -1 * A22^-1 * A21 * A11^-1 A22^-1]
+        int mid = (startRow + endRow) / 2;
+        cilk_spawn matrixInversion(A, startRow, mid, startCol, mid, B); // A11
+        matrixInversion(A, mid, endRow, mid, endCol, B); // A22
         cilk_sync;
+
+        // A21:
+        std::vector<std::vector<double>> C(endRow - mid, std::vector<double>(mid - startCol, 0));
+        for (int i = mid; i < endRow; i++) {
+            for (int j = startCol; j < mid; j++) {
+                C[i - mid][j - startCol] = A[i][j];
+            }
+        }
+        // C = -A22^-1 * A21
+        matrixMultiplication(0, endRow - mid, 0, mid - startCol, 0, mid - startCol, A[mid][mid], mid - startCol, A[mid][mid], mid - startCol, C[0].data(), mid - startCol, B);
+
+        // C = -A22^-1 * A21 * A11^-1
+        matrixMultiplication(0, endRow - mid, 0, mid - startCol, 0, mid - startCol, C[0].data(), mid - startCol, A[startRow][startRow], mid - startCol, C[0].data(), mid - startCol, B);
+
+        // Set A21 = C
+        for (int i = mid; i < endRow; i++) {
+            for (int j = startCol; j < mid; j++) {
+                A[i][j] = C[i - mid][j - startCol];
+            }
+        }
     }
 }
 
+/**
+ * Tests matrix inversion with random data for size n and base case size B
+*/
 void testInverse(int n, int B) {
     std::vector<std::vector<double>> A = generateRandomMatrix(n);
-    parallelInvertMatrix(A, 0, 0, n, B);
+    matrixInversion(A, 0, n, 0, n, B);
     std::cout << "n = " << n << ", B = " << B << std::endl;
     printMatrix(A);
-}
-
-/**
- * Correctness Tests
- * n = 4
- * B = 4, 2, 1
-*/
-void correctnessTests() {
-    std::cout << "Correctness Tests:" << std::endl;
-    testInverse(4, 4);
-    testInverse(4, 2);
-    testInverse(4, 1);
 }
 
 /**
@@ -215,17 +179,19 @@ int main() {
     std::vector<std::vector<double>> A3 = {{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 1, 1, 0}, {1, 1, 1, 1}};
     int B = 4;
     int n = 4;
-    serialInvertMatrix(A1, n);
-    std::cout << "n = " << n << ", B = " << B << std::endl;
+    matrixInversion(A1, 0, n, 0, n, B);
+    matrixInversion(A2, 0, n, 0, n, B);
+    matrixInversion(A3, 0, n, 0, n, B);
     printMatrix(A1);
-    serialInvertMatrix(A2, n);
-    std::cout << "n = " << n << ", B = " << B << std::endl;
     printMatrix(A2);
-    serialInvertMatrix(A3, n);
-    std::cout << "n = " << n << ", B = " << B << std::endl;
     printMatrix(A3);
 
     srand(time(0));
-    correctnessTests();
-    //performanceTests();
+
+    std::cout << "Correctness Tests:" << std::endl;
+    testInverse(4, 4);
+    testInverse(4, 2);
+    testInverse(4, 1);
+
+    performanceTests();
 }
