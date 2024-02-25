@@ -16,7 +16,7 @@ float distance(int x1, int y1, int x2, int y2) {
  *  Input: 2d array of points (x, y) - sorted by their x values
  *  Output: the pair of points that are closest to each other [(x1, y1), (x2, y2)]
  */
-void closestPairs(int points[][2]) {
+void closestPairs(int points[SIZE][2]) {
     // Base case: if there are only two points, return them
     if (n == 2) {
         printf("Closest pair of points: (%d, %d), (%d, %d)\n", points[0][0], points[0][1], points[1][0], points[1][1]);
@@ -44,7 +44,7 @@ void closestPairs(int points[][2]) {
     printf("Closest pair of points in right half: (%d, %d), (%d, %d)\n", res2[0][0], res2[0][1], res2[1][0], res2[1][1]);
 }
 
-void findClosestPair(float points[][2], float res[2][3]) {
+void findClosestPair(float points[SIZE][2], float res[2][3]) {
     // Print the points
     printf("Points: ");
     for (int i = 0; i < n; i++) {
@@ -72,7 +72,7 @@ void findClosestPair(float points[][2], float res[2][3]) {
  * Helper to sort the array of points by their x-values before calling the closestPairs function
  * Necessary for the closestPairs function to work with medians
 */
-void sortArrayByX(float points[][2]) {
+void sortArrayByX(float points[SIZE][2]) {
     // Sort the points by their x-values
     for (int i = 0; i < n; i++) {
         for (int j = i + 1; j < n; j++) {

@@ -4,277 +4,181 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
+#include <iomanip>
+#include <chrono>
 
 /**
- * Function to perform matrix multiplication
+ * Print out a matrix
 */
-std::vector<std::vector<double>> multiplyMatricesSerial(std::vector<std::vector<double>>& M1, std::vector<std::vector<double>>& M2) {
-    int rows1 = M1.size(), cols1 = M1[0].size();
-    int rows2 = M2.size(), cols2 = M2[0].size();
-
-    // Error Handling: Ensure the matrices can be multiplied
-    if (cols1 != rows2) {
-        std::cout << "The matrices cannot be multiplied" << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<double>> result(rows1, std::vector<double>(cols2, 0));
-
-    // Transpose M2 for better cache utilization
-    std::vector<std::vector<double>> M2Transpose(cols2, std::vector<double>(rows2));
-    for (int i = 0; i < rows2; i++) {
-        for (int j = 0; j < cols2; j++) {
-            M2Transpose[j][i] = M2[i][j];
-        }
-    }
-
-    for (int i = 0; i < rows1; i++) {
-        for (int j = 0; j < cols2; j++) {
-            double sum = 0.0;
-            for (int k = 0; k < cols1; k++) {
-                sum += M1[i][k] * M2Transpose[j][k];
+void printMatrix(const std::vector<std::vector<double>>& M, std::string title = "") {
+    std::cout << title << std::endl;
+    for (int i = 0; i < M.size(); i++) {
+        for (int j = 0; j < M[0].size(); j++) {
+            // Epsilon and Negative Removal for Clean Printing - Floating Point Stuff
+            if (M[i][j] == -0 || M[i][j] - 0 < 0.000001) {
+                std::cout << std::setw(5) << std::setprecision(2) << 0 << " ";
             }
-            result[i][j] = sum;
+            else {
+                std::cout << std::setw(5) << std::setprecision(2) << M[i][j] << " ";
+            }
         }
+        std::cout << std::endl;
     }
-
-    return result;
+    std::cout << std::endl;
 }
 
 /**
  * Function to perform matrix multiplication
+ * M1: The first matrix - this matrix will be updated with the result
+ * M2: The second matrix
+ * Computation: M1 * M2
 */
-std::vector<std::vector<double>> multiplyMatricesParallel(std::vector<std::vector<double>>& M1, std::vector<std::vector<double>>& M2) {
-    int rows1 = M1.size(), cols1 = M1[0].size();
-    int rows2 = M2.size(), cols2 = M2[0].size();
-
-    // Error Handling: Ensure the matrices can be multiplied
-    if (cols1 != rows2) {
-        std::cout << "The matrices cannot be multiplied" << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<double>> result(rows1, std::vector<double>(cols2, 0));
-
-    // Transpose M2 for better cache utilization
-    std::vector<std::vector<double>> M2Transpose(cols2, std::vector<double>(rows2));
-    cilk_for (int i = 0; i < rows2; i++) {
-        for (int j = 0; j < cols2; j++) {
-            M2Transpose[j][i] = M2[i][j];
-        }
-    }
-
+void multiplyMatricesParallel(std::vector<std::vector<double>>& M1, std::vector<std::vector<double>>& M2, int startRowM1, int startColM1, int startRowM2, int startColM2, int size) {
     // Parallelized matrix multiplication
-    cilk_for (int i = 0; i < rows1; i++) {
-        for (int j = 0; j < cols2; j++) {
+    std::vector<std::vector<double>> temp(size, std::vector<double>(size, 0));
+    cilk_for (int i = 0; i < size; i++) {
+        cilk_for (int j = 0; j < size; j++) {
             double sum = 0.0;
-            cilk_for (int k = 0; k < cols1; k++) {
-                sum += M1[i][k] * M2Transpose[j][k];
+            for (int k = 0; k < size; k++) {
+                sum += M1[startRowM1 + i][startColM1 + k] * M2[startRowM2 + k][startColM2 + j];
             }
-            result[i][j] = sum;
+            temp[i][j] = sum;
         }
     }
-
-    return result;
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            M1[startRowM1 + i][startColM1 + j] = temp[i][j];
+        }
+    }
+    return;
 }
 
 /**
  * Function to get the inverse of a n*n lower triangular matrix
  * Used to compute A_1^-1 and A_3^-1 to then obtain A^-1
 */
-std::vector<std::vector<double>> getLowerTriangularInverseSerial(std::vector<std::vector<double>> M, int B) {
-    int rows = M.size(), cols = M[0].size();
-
-    // Base Case: Ensure the matrix is square
-    if (rows != cols) {
-        std::cout << "The matrix is not square" << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<double>> result(rows, std::vector<double>(cols, 0));
-
-    // Base Case: Sequentially compute inverse when the matrix is small enough
-    if (rows <= B) {
-        for (int i = 0; i < rows; i++) {
-            for (int j = 0; j <= i; j++) {
+void getLowerTriangularInverseParallel(std::vector<std::vector<double>> &M, int B, int startRow, int startCol, int endRow, int endCol) {
+    // Base Case: Forward substitution when the matrix is small enough
+    if (endRow - startRow <= B) {
+        for (int i = startRow; i < endRow; i++) {
+            for (int j = startCol; j <= i; j++) {
                 if (i == j) {
-                    result[i][j] = 1 / M[i][j];
-                } else {
+                    M[i][j] = 1 / M[i][j];                                                                // Diagonal Elements
+                }
+                else {
                     double sum = 0;
                     for (int k = j; k < i; k++) {
-                        sum += M[i][k] * result[k][j];
+                        sum += M[i][k] * M[k][j];                                                         // Summation
                     }
-                    result[i][j] = -sum / M[i][i];
+                    M[i][j] = -sum / M[i][i];                                                             // Off-Diagonal Elements
                 }
             }
         }
-        return result;
+        return;
     }
+    int mid = (endRow - startRow) / 2;
 
-    // Top-left quarter of the matrix
-    std::vector<std::vector<double>> A_1(B, std::vector<double>(B, 0));
-    for (int i = 0; i < B; i++) {
-        for (int j = 0; j < B; j++) {
-            A_1[i][j] = M[i][j];
-        }
-    }
+    // Computing A1^-1 and A3^-1
+    cilk_spawn getLowerTriangularInverseParallel(M, B, startRow, startCol, mid, mid);                     // A1 inverse
+    cilk_spawn getLowerTriangularInverseParallel(M, B, startRow + mid, startCol + mid, endRow, endCol);   // A3 inverse
+    cilk_sync;                                                                                            // Syncing Parallelism
 
-    // Bottom-left quarter of the matrix
-    std::vector<std::vector<double>> A_2(rows - B, std::vector<double>(B, 0));
-    for (int i = B; i < rows; i++) {
-        for (int j = 0; j < B; j++) {
-            A_2[i - B][j] = M[i][j];
-        }
-    }
+    // Computing the multiplication for A2
+    multiplyMatricesParallel(M, M, startRow + mid, startCol, startRow, startCol, mid);                    // A_2 * A_1^-1
 
-    // Bottom-right quarter of the matrix
-    std::vector<std::vector<double>> A_3(rows - B, std::vector<double>(rows - B, 0));
-    for (int i = B; i < rows; i++) {
-        for (int j = B; j < rows; j++) {
-            A_3[i - B][j - B] = M[i][j];
+    // Create a temporary matrix to hold A3
+    std::vector<std::vector<double>> M3(mid, std::vector<double>(mid, 0));
+
+    // Fill the temporary matrix with A3^-1
+    for (int i = 0; i < mid; i++) {
+        for (int j = 0; j < mid; j++) {
+            M3[i][j] = M[startRow + mid + i][startCol + mid + j];
         }
     }
 
-    // Computing A1 and A3 inverses
-    std::vector<std::vector<double>> A_1_inv = getLowerTriangularInverseSerial(A_1, B);
-    std::vector<std::vector<double>> A_3_inv = getLowerTriangularInverseSerial(A_3, B);
+    multiplyMatricesParallel(M3, M, 0, 0, startRow + mid, startCol, mid);                                // M3 = A3^-1 * (A_2 * A_1^-1)
+    for (int i = 0; i < mid; i++) {
+        for (int j = 0; j < mid; j++) {
+            M[startRow + mid + i][startCol + j] = -M3[i][j];                                             // A3^-1 * (A_2 * A_1^-1)
+        }
+    }
+}
 
-    // Computing A2 inverse
-    std::vector<std::vector<double>> bottom_left = multiplyMatricesSerial(A_3_inv, A_2);
-    bottom_left = multiplyMatricesSerial(bottom_left, A_1_inv);
-
-    for (int i = 0; i < bottom_left.size(); i++) {
-        for (int j = 0; j < bottom_left[0].size(); j++) {
-            bottom_left[i][j] = -bottom_left[i][j];
+/**
+ * Function to perform matrix multiplication
+ * M1: The first matrix - this matrix will be updated with the result
+ * M2: The second matrix
+ * Computation: M1 * M2
+*/
+void multiplyMatricesSerial(std::vector<std::vector<double>>& M1, std::vector<std::vector<double>>& M2, int startRowM1, int startColM1, int startRowM2, int startColM2, int size) {
+    // Parallelized matrix multiplication
+    std::vector<std::vector<double>> temp(size, std::vector<double>(size, 0));
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            double sum = 0.0;
+            for (int k = 0; k < size; k++) {
+                sum += M1[startRowM1 + i][startColM1 + k] * M2[startRowM2 + k][startColM2 + j];
+            }
+            temp[i][j] = sum;
         }
     }
-
-    // Top Left: A_1^-1
-    for (int i = 0; i < B; i++) {
-        for (int j = 0; j < B; j++) {
-            result[i][j] = A_1_inv[i][j];
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            M1[startRowM1 + i][startColM1 + j] = temp[i][j];
         }
     }
-    // Top Right: 0
-    for (int i = 0; i < B; i++) {
-        for (int j = B; j < cols; j++) {
-            result[i][j] = 0;
-        }
-    }
-    // Bottom Right: A_3^-1
-    for (int i = B; i < rows; i++) {
-        for (int j = B; j < cols; j++) {
-            result[i][j] = A_3_inv[i - B][j - B];
-        }
-    }
-    // Bottom Left: -A_3^-1 * A_2 * A_1^-1
-    for (int i = B; i < rows; i++) {
-        for (int j = 0; j < B; j++) {
-            result[i][j] = bottom_left[i - B][j];
-        }
-    }
-    
-    return result;
+    return;
 }
 
 /**
  * Function to get the inverse of a n*n lower triangular matrix
  * Used to compute A_1^-1 and A_3^-1 to then obtain A^-1
 */
-std::vector<std::vector<double>> getLowerTriangularInverseParallel(std::vector<std::vector<double>> M, int B) {
-    int rows = M.size(), cols = M[0].size();
-
-    // Base Case: Ensure the matrix is square
-    if (rows != cols) {
-        std::cout << "The matrix is not square" << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<double>> result(rows, std::vector<double>(cols, 0));
-
-    // Base Case: Sequentially compute inverse when the matrix is small enough
-    if (rows <= B) {
-        for (int i = 0; i < rows; i++) {
-            for (int j = 0; j <= i; j++) {
+void getLowerTriangularInverseSerial(std::vector<std::vector<double>> &M, int B, int startRow, int startCol, int endRow, int endCol) {
+    // Base Case: Forward substitution when the matrix is small enough
+    if (endRow - startRow <= B) {
+        for (int i = startRow; i < endRow; i++) {
+            for (int j = startCol; j <= i; j++) {
                 if (i == j) {
-                    result[i][j] = 1 / M[i][j];
-                } else {
+                    M[i][j] = 1 / M[i][j];                                                                // Diagonal Elements
+                }
+                else {
                     double sum = 0;
                     for (int k = j; k < i; k++) {
-                        sum += M[i][k] * result[k][j];
+                        sum += M[i][k] * M[k][j];                                                         // Summation
                     }
-                    result[i][j] = -sum / M[i][i];
+                    M[i][j] = -sum / M[i][i];                                                             // Off-Diagonal Elements
                 }
             }
         }
-        return result;
+        return;
     }
+    int mid = (endRow - startRow) / 2;
 
-    // Top-left quarter of the matrix
-    std::vector<std::vector<double>> A_1(B, std::vector<double>(B, 0));
-    for (int i = 0; i < B; i++) {
-        for (int j = 0; j < B; j++) {
-            A_1[i][j] = M[i][j];
-        }
-    }
+    // Computing A1^-1 and A3^-1
+    getLowerTriangularInverseSerial(M, B, startRow, startCol, mid, mid);                     // A1 inverse
+    getLowerTriangularInverseSerial(M, B, startRow + mid, startCol + mid, endRow, endCol);   // A3 inverse                                                                                        // Syncing Parallelism
 
-    // Bottom-left quarter of the matrix
-    std::vector<std::vector<double>> A_2(rows - B, std::vector<double>(B, 0));
-    for (int i = B; i < rows; i++) {
-        for (int j = 0; j < B; j++) {
-            A_2[i - B][j] = M[i][j];
-        }
-    }
+    // Computing the multiplication for A2
+    multiplyMatricesSerial(M, M, startRow + mid, startCol, startRow, startCol, mid);                    // A_2 * A_1^-1
 
-    // Bottom-right quarter of the matrix
-    std::vector<std::vector<double>> A_3(rows - B, std::vector<double>(rows - B, 0));
-    for (int i = B; i < rows; i++) {
-        for (int j = B; j < rows; j++) {
-            A_3[i - B][j - B] = M[i][j];
+    // Create a temporary matrix to hold A3
+    std::vector<std::vector<double>> M3(mid, std::vector<double>(mid, 0));
+
+    // Fill the temporary matrix with A3^-1
+    for (int i = 0; i < mid; i++) {
+        for (int j = 0; j < mid; j++) {
+            M3[i][j] = M[startRow + mid + i][startCol + mid + j];
         }
     }
 
-    // Computing A1 and A3 inverses
-    std::vector<std::vector<double>> A_1_inv = cilk_spawn getLowerTriangularInverseParallel(A_1, B);
-    std::vector<std::vector<double>> A_3_inv = getLowerTriangularInverseParallel(A_3, B);
-    cilk_sync;
-
-    // Computing A2 inverse
-    std::vector<std::vector<double>> bottom_left = multiplyMatricesParallel(A_3_inv, A_2);
-    bottom_left = multiplyMatricesParallel(bottom_left, A_1_inv);
-
-    for (int i = 0; i < bottom_left.size(); i++) {
-        for (int j = 0; j < bottom_left[0].size(); j++) {
-            bottom_left[i][j] = -bottom_left[i][j];
+    multiplyMatricesSerial(M3, M, 0, 0, startRow + mid, startCol, mid);                                // M3 = A3^-1 * (A_2 * A_1^-1)
+    for (int i = 0; i < mid; i++) {
+        for (int j = 0; j < mid; j++) {
+            M[startRow + mid + i][startCol + j] = -M3[i][j];                                             // A3^-1 * (A_2 * A_1^-1)
         }
     }
-
-    // Top Left: A_1^-1
-    for (int i = 0; i < B; i++) {
-        for (int j = 0; j < B; j++) {
-            result[i][j] = A_1_inv[i][j];
-        }
-    }
-    // Top Right: 0
-    for (int i = 0; i < B; i++) {
-        for (int j = B; j < cols; j++) {
-            result[i][j] = 0;
-        }
-    }
-    // Bottom Right: A_3^-1
-    for (int i = B; i < rows; i++) {
-        for (int j = B; j < cols; j++) {
-            result[i][j] = A_3_inv[i - B][j - B];
-        }
-    }
-    // Bottom Left: -A_3^-1 * A_2 * A_1^-1
-    for (int i = B; i < rows; i++) {
-        for (int j = 0; j < B; j++) {
-            result[i][j] = bottom_left[i - B][j];
-        }
-    }
-    
-    return result;
 }
 
 /**
@@ -290,116 +194,82 @@ std::vector<std::vector<double>> generateRandomMatrix(int size) {
     return result;
 }
 
-/**
- * Print out a matrix
-*/
-void printMatrix(std::vector<std::vector<double>> M) {
-    for (int i = 0; i < M.size(); i++) {
-        for (int j = 0; j < M[0].size(); j++) {
-            // Handle -0 and epsilon value for 0
-            if (M[i][j] == -0 || M[i][j] - 0 < 0.000001) {
-                M[i][j] = 0;
-            }
-            std::cout << M[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << std::endl;
-}
-
-/**
- * Correctness Tests
- * n = 4
- * B = 4, 2, 1
-*/
 void correctnessTests() {
     std::cout << "First Correctness Check, B = 4:" << std::endl;
     std::vector<std::vector<double>> A1c = generateRandomMatrix(4);
-    std::vector<std::vector<double>> A1c_inv = getLowerTriangularInverseParallel(A1c, 4);
-    std::vector<std::vector<double>> I = multiplyMatricesParallel(A1c, A1c_inv);
-    std::cout << "A1c * A1c_inv Result:" << std::endl;
-    printMatrix(I);
+    std::vector<std::vector<double>> A1c_copy = A1c;
+    getLowerTriangularInverseParallel(A1c, 4, 0, 0, 4, 4);
+    multiplyMatricesParallel(A1c, A1c_copy, 0, 0, 0, 0, 4);
+    printMatrix(A1c);
 
     std::cout << "Second Correctness Check, B = 2:" << std::endl;
     std::vector<std::vector<double>> A2c = generateRandomMatrix(4);
-    std::vector<std::vector<double>> A2c_inv = getLowerTriangularInverseParallel(A2c, 2);
-    std::vector<std::vector<double>> I_2 = multiplyMatricesParallel(A2c, A2c_inv);
-    std::cout << "A2c * A2c_inv Result:" << std::endl;
-    printMatrix(I_2);
+    std::vector<std::vector<double>> A2c_copy = A2c;
+    getLowerTriangularInverseParallel(A2c, 2, 0, 0, 4, 4);
+    multiplyMatricesParallel(A2c, A2c_copy, 0, 0, 0, 0, 4);
+    printMatrix(A2c);
 
     std::cout << "Third Correctness Check, B = 1:" << std::endl;
     std::vector<std::vector<double>> A3c = generateRandomMatrix(4);
-    std::vector<std::vector<double>> A3c_inv = getLowerTriangularInverseParallel(A3c, 1);
-    std::vector<std::vector<double>> I_3 = multiplyMatricesParallel(A3c, A3c_inv);
-    std::cout << "A3c * A3c_inv Result:" << std::endl;
-    printMatrix(I_3);
+    std::vector<std::vector<double>> A3c_copy = A3c;
+    getLowerTriangularInverseParallel(A3c, 1, 0, 0, 4, 4);
+    multiplyMatricesParallel(A3c, A3c_copy, 0, 0, 0, 0, 4);
+    printMatrix(A3c);
 }
 
-/**
- * Performance Tests
- * n = 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048
- * B = 32, 64, 128
-*/
 void performanceTests() {
-    std::vector<int> n = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
+    std::vector<int> n = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192};
     std::vector<int> B = {32, 64, 128};
 
     // Create LaTeX table for performance tests
     std::cout << "LaTeX Table for Performance Tests:" << std::endl;
-    std::cout << "\\begin{tabular}{|c|c|c|c|}" << std::endl;
+    std::cout << "\\begin{table}[H]" << std::endl;
+    std::cout << "\\caption{Parallel vs Serial Performance}" << std::endl;
+    std::cout << "\\vspace{2mm}" << std::endl << "\\centering" << std::endl;
+    std::cout << "\\begin{tabular}{|c|c|c|c|c|}" << std::endl;
     std::cout << "\\hline" << std::endl;
-    std::cout << "n & B & Time & Success \\\\" << std::endl;
+    std::cout << "n & B & Parallel Time & Serial Time & Speedup \\\\" << std::endl;
     std::cout << "\\hline" << std::endl;
     for (int i = 0; i < n.size(); i++) {
         std::vector<std::vector<double>> A = generateRandomMatrix(n[i]);
         for (int j = 0; j < B.size(); j++) {
-            clock_t start = clock();
-            std::vector<std::vector<double>> A_inv = getLowerTriangularInverseParallel(A, B[j]);
-            clock_t end = clock();
-            double time = (double)(end - start) / CLOCKS_PER_SEC;
-            std::cout << n[i] << " & " << B[j] << " & " << time << " & ";
+            auto start = std::chrono::high_resolution_clock::now();
+            getLowerTriangularInverseParallel(A, B[j], 0, 0, n[i], n[i]);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> diff = end - start;
 
-            // Check that M * M^-1 = I and print success if so
-            std::vector<std::vector<double>> I = multiplyMatricesParallel(A, A_inv);
-            bool success = true;
-            for (int k = 0; k < I.size(); k++) {
-                for (int l = 0; l < I[0].size(); l++) {
-                    if (k == l) {
-                        if (I[k][l] - 1 > 0.000001) {
-                            success = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (success) {
-                std::cout << "Success \\\\" << std::endl;
-            } else {
-                std::cout << "Failure \\\\" << std::endl;
-            }
+            start = std::chrono::high_resolution_clock::now();
+            //getLowerTriangularInverseSerial(A, B[j], 0, 0, n[i], n[i]);
+            end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> diffSerial = end - start;
+            std::cout << n[i] << " & " << B[j] << " & " << diff.count() << " & " << diffSerial.count() << " & " << diffSerial.count() / diff.count() << " \\\\" << std::endl;
         }
     }
     std::cout << "\\hline" << std::endl;
     std::cout << "\\end{tabular}" << std::endl;
+    std::cout << "\\end{table}" << std::endl;
 }
 
-int main() {
+void unimodularExamples() {
     std::cout << "Inverse of A1 Example:" << std::endl;
     std::vector<std::vector<double>> A1 = {{1, 0, 0, 0}, {-1, 1, 0, 0}, {-1, -1, 1, 0}, {-1, -1, -1, 1}};
-    std::vector<std::vector<double>> A1_inv = getLowerTriangularInverseParallel(A1, 4);
-    printMatrix(A1_inv);
+    getLowerTriangularInverseParallel(A1, 1, 0, 0, 4, 4);
+    printMatrix(A1);
 
     std::cout << "Inverse of A2 Example:" << std::endl;
     std::vector<std::vector<double>> A2 = {{1, 0, 0, 0}, {-1, 1, 0, 0}, {1, -1, 1, 0}, {1, 1, -1, 1}};
-    std::vector<std::vector<double>> A2_inv = getLowerTriangularInverseParallel(A2, 4);
-    printMatrix(A2_inv);
+    getLowerTriangularInverseParallel(A2, 2, 0, 0, 4, 4);
+    printMatrix(A2);
 
     std::cout << "Inverse of A3 Example:" << std::endl;
     std::vector<std::vector<double>> A3 = {{1, 0, 0, 0}, {1, 1, 0, 0}, {1, 1, 1, 0}, {1, 1, 1, 1}};
-    std::vector<std::vector<double>> A3_inv = getLowerTriangularInverseParallel(A3, 4);
-    printMatrix(A3_inv);
+    getLowerTriangularInverseParallel(A3, 4, 0, 0, 4, 4);
+    printMatrix(A3);
+}
 
+int main() {
     srand(time(0));
+    unimodularExamples();
     correctnessTests();
     performanceTests();
 }
