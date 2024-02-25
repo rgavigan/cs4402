@@ -1,107 +1,506 @@
+#include <cilk/cilk.h>
+#include <iostream>
+#include <vector>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
+#include <iomanip>
+#include <chrono>
+#include <algorithm>
+#include <math.h>
 
-// Define the number of points
-#define n 128
+#define basecase 4096
 
 /**
- * Helper to calculate the distance between two points
+ * Point structure to represent a point in 2D space
 */
-float distance(int x1, int y1, int x2, int y2) {
-    return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
-}
+struct Point {
+    double x, y;
 
-/** Function to find the closest pair of points in a 2D plane
- *  Input: 2d array of points (x, y) - sorted by their x values
- *  Output: the pair of points that are closest to each other [(x1, y1), (x2, y2)]
- */
-void closestPairs(int points[][2]) {
-    // Base case: if there are only two points, return them
-    if (n == 2) {
-        printf("Closest pair of points: (%d, %d), (%d, %d)\n", points[0][0], points[0][1], points[1][0], points[1][1]);
-        return;
+    bool operator<(const Point &p) const {
+        return y < p.y;
     }
+};
 
-    // Split the array into two halves
-    float left[n / 2][2];
-    float right[n / 2][2];
-    for (int i = 0; i < n / 2; i++) {
-        left[i][0] = points[i][0];
-        left[i][1] = points[i][1];
-        right[i][0] = points[i + n / 2][0];
-        right[i][1] = points[i + n / 2][1];
-    }
-
-    // Recursively find the closest pair in each half
-    float res1[2][2];
-    float res2[2][2];
-    findClosestPair(left, res1);
-    findClosestPair(right, res2);
-
-    // Print out res1 and res2
-    printf("Closest pair of points in left half: (%d, %d), (%d, %d)\n", res1[0][0], res1[0][1], res1[1][0], res1[1][1]);
-    printf("Closest pair of points in right half: (%d, %d), (%d, %d)\n", res2[0][0], res2[0][1], res2[1][0], res2[1][1]);
-}
-
-void findClosestPair(float points[][2], float res[2][3]) {
-    // Print the points
-    printf("Points: ");
-    for (int i = 0; i < n; i++) {
-        printf("(%d, %d) ", points[i][0], points[i][1]);
-    }
-
-
-    // Find the closest pair of points in the array recursively with sqrt((xj - xi)^2 + (yj - yi)^2)
-    float minDistance = distance(points[0][0], points[0][1], points[1][0], points[1][1]);
-    int minIndex1 = 0;
-    int minIndex2 = 1;
-    for (int i = 0; i < n; i++) {
-        for (int j = i + 1; j < n; j++) {
-            float dist = distance(points[i][0], points[i][1], points[j][0], points[j][1]);
-            if (dist < minDistance) {
-                minDistance = dist;
-                minIndex1 = i;
-                minIndex2 = j;
-            }
-        }
-    }
+/**
+ * Calculates the distance between two points, pi and pj
+*/
+double distance(Point pi, Point pj) {
+    return sqrt(pow(pj.x - pi.x, 2) + pow(pj.y - pi.y, 2));
 }
 
 /**
- * Helper to sort the array of points by their x-values before calling the closestPairs function
- * Necessary for the closestPairs function to work with medians
+ * Sort an array of points by y-coordinate
 */
-void sortArrayByX(float points[][2]) {
-    // Sort the points by their x-values
-    for (int i = 0; i < n; i++) {
-        for (int j = i + 1; j < n; j++) {
-            if (points[i][0] > points[j][0]) {
-                int tempX = points[i][0];
-                int tempY = points[i][1];
-                points[i][0] = points[j][0];
-                points[i][1] = points[j][1];
-                points[j][0] = tempX;
-                points[j][1] = tempY;
+std::vector<Point> sortY(std::vector<Point> points) {
+    std::sort(points.begin(), points.end(), [](Point a, Point b) {
+        return a.y < b.y;
+    });
+    return points;
+}
+
+/**
+ * Closest Pair Problem: Given n points, divide and conquer algorithm to find closest pair of points
+ * Param: points - Array of points where all coordinates are pairwise distinct (unique)
+ * Returns: Array of two points that are closest to each other
+*/
+std::vector<Point> closestPair(std::vector<Point> points, int start, int end) {
+    // Base Case: If there are only two points, return them
+    std::vector<Point> pair;
+    if (end - start == 2) {
+        pair.push_back(points[start]);
+        pair.push_back(points[end]);
+        return pair;
+    }
+
+    // Find value x that divides the set of points into two equal halves
+    int half = (start + end) / 2;
+    double x = (points[half - 1].x + points[half].x) / 2;
+
+    // Recursively find closest pair in left and right side (L and R)
+    std::vector<Point> L = closestPair(points, start, half);
+    std::vector<Point> R = closestPair(points, half, end);
+    double dL = distance(L[0], L[1]);
+    double dR = distance(R[0], R[1]);
+
+    // Check if L or R is the closest pair
+    double d;
+    if (dL < dR) {
+        pair = L;
+        d = dL;
+    } else {
+        pair = R;
+        d = dR;
+    }
+
+    // Discard all points with xi < x - d or xi > x + d
+    std::vector<Point> S;
+    for (int i = 0; i < points.size(); i++) {
+        if (points[i].x >= x - d && points[i].x <= x + d) {
+            S.push_back(points[i]);
+        }
+    }
+
+    // Sort S by y-coordinate
+    S = sortY(S);
+
+    // Go through S and for each point, compare it to the next 6 points. Save the closest pair as a point
+    for (int i = 0; i < S.size(); i++) {
+        for (int j = i + 1; j < i + 7 && j < S.size(); j++) {
+            if (distance(S[i], S[j]) < d) {
+                d = distance(S[i], S[j]);
+                pair[0] = S[i];
+                pair[1] = S[j];
             }
         }
     }
+    return pair;
 }
+
+/**
+ * Closest Pair Problem: Given n points, divide and conquer algorithm to find closest pair of points
+ * Param: points - Array of points where all coordinates are pairwise distinct (unique)
+ * Returns: Array of two points that are closest to each other
+*/
+std::vector<Point> closestPairNaiveParallel(std::vector<Point> points, int start, int end) {
+    // Base Case: If there are only two points, return them
+    std::vector<Point> pair;
+    if (end - start == 2) {
+        pair.push_back(points[start]);
+        pair.push_back(points[end]);
+        return pair;
+    }
+
+    // Find value x that divides the set of points into two equal halves
+    int half = (start + end) / 2;
+    double x = (points[half - 1].x + points[half].x) / 2;
+
+    // Recursively find closest pair in left and right side (L and R)
+    std::vector<Point> L = cilk_spawn closestPairNaiveParallel(points, start, half);
+    std::vector<Point> R = cilk_spawn closestPairNaiveParallel(points, half, end);
+    cilk_sync;
+    double dL = distance(L[0], L[1]);
+    double dR = distance(R[0], R[1]);
+
+    // Check if L or R is the closest pair
+    double d;
+    if (dL < dR) {
+        pair = L;
+        d = dL;
+    } else {
+        pair = R;
+        d = dR;
+    }
+
+    // Discard all points with xi < x - d or xi > x + d
+    std::vector<Point> S;
+    for (int i = 0; i < points.size(); i++) {
+        if (points[i].x >= x - d && points[i].x <= x + d) {
+            S.push_back(points[i]);
+        }
+    }
+
+    // Sort S by y-coordinate
+    S = sortY(S);
+
+    // Go through S and for each point, compare it to the next 6 points. Save the closest pair as a point
+    for (int i = 0; i < S.size(); i++) {
+        for (int j = i + 1; j < i + 7 && j < S.size(); j++) {
+            if (distance(S[i], S[j]) < d) {
+                d = distance(S[i], S[j]);
+                pair[0] = S[i];
+                pair[1] = S[j];
+            }
+        }
+    }
+    return pair;
+}
+
+void merge(int* data, int istart, int mid, int iend)
+{
+	int n = iend - istart + 1 ;
+	int k = mid - istart + 1 ;
+	int m = n - k ;
+	int indexA = 0, indexB = 0, indexC = 0 ;
+	int i ;
+	int* a = &data[istart] ;
+	int* b = &data[mid+1] ;
+	int* c = (int *)malloc(sizeof(int)*n);
+
+	while(indexA < k && indexB < m) {
+	if(a[indexA] <= b[indexB]) 
+	{
+		c[indexC] = a[indexA] ;
+		indexA++ ;
+		indexC++ ;
+	} 
+	else 
+	{
+	c[indexC] = b[indexB] ;
+	indexB++ ;
+	indexC++ ;
+	}
+	}
+	if(indexA >= k) 
+	{
+		for(i = 0 ; i < n-indexC ; i++) 
+		{
+			c[indexC+i] = b[indexB+i] ;
+		}
+	} 
+	else 
+	{
+		for(i = 0 ; i < n-indexC ; i++) 
+		{
+			c[indexC+i] = a[indexA+i] ;
+		}
+	}
+
+	for(i = 0 ; i < n ; i++) 
+	{
+		data[istart+i] = c[i] ;
+	}
+
+	free(c) ;
+}
+
+/*strict less and equal*/
+int binarysearch(int *data, int low, int high, int key)
+ {
+         int middle;
+         int istart = low, iend = high + 1;
+         while ( istart < iend )
+         {
+                  middle = istart + ( iend - istart )/2;
+		if ( data[middle] <= key)
+			istart = middle + 1;
+		else
+			iend = middle;
+         }
+         return istart;
+
+ }
+
+void parallel_submerge(int *c, int *data, int lowx, int highx, int lowy, int highy, int sp)
+{
+
+	int k = highx - lowx + 1 ;
+	int m = highy - lowy + 1 ;
+	int indexA = 0, indexB = 0, indexC = sp ;
+	int i ;
+	int* a = &data[lowx] ;
+	int* b = &data[lowy] ;
+
+	while(indexA < k && indexB < m) {
+	if(a[indexA] <= b[indexB]) 
+	{
+		c[indexC] = a[indexA] ;
+		indexA++ ;
+		indexC++ ;
+	} 
+	else 
+	{
+	c[indexC] = b[indexB] ;
+	indexB++ ;
+	indexC++ ;
+	}
+	}
+	if(indexA >= k) 
+	{
+		for(i = 0 ; i < m - indexB ; i++) 
+		{
+			c[indexC+i] = b[indexB+i] ;
+		}
+	} 
+	else 
+	{
+		for(i = 0 ; i < k - indexA ; i++) 
+		{
+			c[indexC+i] = a[indexA+i] ;
+		}
+	}
+
+}
+
+int parallel_merge(int* c,int* a, int lowx, int highx, int lowy, int highy, int sp)
+ {
+        int mx,my,p,lx,ly;
+	lx = highx - lowx + 1;
+	ly = highy - lowy + 1;
+        if (ly <= basecase || lx <=basecase)
+	{
+		parallel_submerge(c, a, lowx, highx, lowy, highy,sp);
+	}
+	else if (lx < ly)  
+               parallel_merge(c, a, lowy, highy, lowx, highx, sp);
+         else if ( lx == 0 )
+        {
+                         return 0;
+
+        }        else
+                 {     
+                         mx = (lowx + highx)/2;
+                         my = binarysearch(a, lowy, highy, a[mx]);
+                         p = sp + mx - lowx + my - lowy;
+                         c[p]=a[mx];
+                         cilk_spawn parallel_merge(c, a, lowx, mx - 1, lowy, my-1, sp);
+                         parallel_merge(c, a, mx + 1, highx, my, highy, p + 1);
+ }
+ return 0;
+}
+
+
+
+void serial_mergesort(int* data, int istart, int iend)
+{
+	if(istart < iend) 
+	{
+		int mid = (istart + iend) / 2 ;
+		serial_mergesort(data, istart, mid) ;
+		serial_mergesort(data, mid+1, iend) ;
+                merge(data, istart, mid, iend) ;
+        }
+}
+
+void parallel_mergesort(int* c,int* data, int istart, int iend, int BASE)
+{
+	if (iend - istart <= BASE)
+	{	
+        serial_mergesort( data, istart, iend);
+	}
+	else if(istart < iend) 
+	{
+		int mid = (istart + iend) / 2 ;
+		cilk_spawn parallel_mergesort(c,data, istart, mid,BASE) ;
+		parallel_mergesort(c,data, mid+1, iend,BASE) ;
+        cilk_sync;
+	    parallel_merge(c,data,istart,mid, mid + 1,iend,istart) ;
+		for(int i=istart; i<=iend;i++)
+			data[i] = c[i];
+    }
+}
+
+/**
+ * Closest Pair Problem: Given n points, divide and conquer algorithm to find closest pair of points
+ * Param: points - Array of points where all coordinates are pairwise distinct (unique)
+ * Returns: Array of two points that are closest to each other
+ * Parallelizes the merge to get to parallelism of O(n/logn)
+*/
+std::vector<Point> closestPairIdealParallel(std::vector<Point> points, int start, int end) {
+    std::vector<Point> pair;
+    if (end - start == 2) {
+        pair.push_back(points[start]);
+        pair.push_back(points[end]);
+        return pair;
+    }
+
+    // Find value x that divides the set of points into two equal halves
+    int half = (start + end) / 2;
+    double x = (points[half - 1].x + points[half].x) / 2;
+
+    // Recursively find closest pair in left and right side (L and R)
+    std::vector<Point> L = cilk_spawn closestPairNaiveParallel(points, start, half);
+    std::vector<Point> R = cilk_spawn closestPairNaiveParallel(points, half, end);
+    cilk_sync;
+    double dL = distance(L[0], L[1]);
+    double dR = distance(R[0], R[1]);
+
+    // Check if L or R is the closest pair
+    double d;
+    if (dL < dR) {
+        pair = L;
+        d = dL;
+    } else {
+        pair = R;
+        d = dR;
+    }
+
+    // Discard all points with xi < x - d or xi > x + d
+    std::vector<Point> S;
+    for (int i = 0; i < points.size(); i++) {
+        if (points[i].x >= x - d && points[i].x <= x + d) {
+            S.push_back(points[i]);
+        }
+    }
+
+    // Sort by y-coordinate using parallel mergesort
+    int* data = (int *)malloc(sizeof(int)*S.size());
+    for (int i = 0; i < S.size(); i++) {
+        data[i] = S[i].y;
+    }
+    int* c = (int *)malloc(sizeof(int)*S.size());
+    int BASE = 32;
+    parallel_mergesort(c,data, 0, S.size()-1, BASE);
+    for (int i = 0; i < S.size(); i++) {
+        S[i].y = data[i];
+    }
+    free(data);
+    free(c);
+
+    // Go through S and for each point, compare it to the next 6 points. Save the closest pair as a point
+    for (int i = 0; i < S.size(); i++) {
+        for (int j = i + 1; j < i + 7 && j < S.size(); j++) {
+            if (distance(S[i], S[j]) < d) {
+                d = distance(S[i], S[j]);
+                pair[0] = S[i];
+                pair[1] = S[j];
+            }
+        }
+    }
+    return pair;
+}
+
+
+/**
+ * Sort an array of points by x-coordinate
+*/
+std::vector<Point> sortX(std::vector<Point> points) {
+    std::sort(points.begin(), points.end(), [](Point a, Point b) {
+        return a.x < b.x;
+    });
+    return points;
+}
+
+/**
+ * Produce a vector of n random points with distinct x and y coordinates
+ * Values from 0.1 -> 10.0
+*/
+std::vector<Point> randomPoints(int n) {
+    std::vector<Point> points;
+    for (int i = 0; i < n; i++) {
+        Point p;
+        p.x = (double)rand() / RAND_MAX * 10.0;
+        p.y = (double)rand() / RAND_MAX * 10.0;
+        points.push_back(p);
+    }
+    return points;
+}
+
+/**
+ * Brute force computation of closest pair of points for testing answer
+*/
+std::vector<Point> bruteForce(std::vector<Point> points) {
+    std::vector<Point> pair;
+    pair.push_back(points[0]);
+    pair.push_back(points[1]);
+    double min = 1000000;
+    for (int i = 0; i < points.size(); i++) {
+        for (int j = i + 1; j < points.size(); j++) {
+            double d = distance(points[i], points[j]);
+            if (d < min) {
+                min = d;
+                pair[0] = points[i];
+                pair[1] = points[j];
+            }
+        }
+    }
+    return pair;
+}
+
+/**
+ * Performance testing for closest pair problem for different values of n (powers of 2), comparing time
+*/
+void performanceTest() {
+    // Open CSV file for writing results
+    FILE *fp = fopen("resultsClosest.csv", "w");
+    fprintf(fp, "n,B,Serial Time,Parallel Time,Improved Parallel Time\n");
+
+    // Create LaTeX Table for performance testing
+    std::cout << "\\begin{table}[H]" << std::endl;
+    std::cout << "\\centering" << std::endl;
+    std::cout << "\\begin{tabular}{|c|c|c|c|}" << std::endl;
+    std::cout << "\\hline" << std::endl;
+    std::cout << "n & Serial Time (s) & Parallel Time (s) & Improved Parallel Time (s) \\\\" << std::endl;
+    for (int n = 16; n <= 65536; n *= 2) {
+        std::vector<Point> points = sortX(randomPoints(n));
+        auto start = std::chrono::high_resolution_clock::now();
+        closestPair(points, 0, n);
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> time = end - start;
+        double closestPairTime = time.count();
+
+        start = std::chrono::high_resolution_clock::now();
+        closestPairNaiveParallel(points, 0, n);
+        end = std::chrono::high_resolution_clock::now();
+        time = end - start;
+        double closestPairParallelTime = time.count();
+
+        start = std::chrono::high_resolution_clock::now();
+        closestPairIdealParallel(points, 0, n);
+        end = std::chrono::high_resolution_clock::now();
+        time = end - start;
+        double closestPairIdealParallelTime = time.count();
+
+        std::cout << n << " & " << std::fixed << std::setprecision(6) << closestPairTime << " & " << closestPairParallelTime << " & " << closestPairIdealParallelTime << " \\\\" << std::endl;
+        fprintf(fp, "%d,%d,%f,%f,%f\n", n, 32, closestPairTime, closestPairParallelTime, closestPairIdealParallelTime);
+    }
+    std::cout << "\\hline" << std::endl;
+    std::cout << "\\end{tabular}" << std::endl;
+    std::cout << "\\caption{Performance Testing for Closest Pair Problem}" << std::endl;
+    std::cout << "\\end{table}" << std::endl;
+}
+
 
 int main() {
-    // Random initialization
     srand(time(0));
-
-    // Create an array of points
-    float points[n][2];
-    for (int i = 0; i < n; i++) {
-        points[i][0] = i + rand() % 1000;
-        points[i][1] = i + rand() % 1000;
+    int n = 16;
+    std::vector<Point> points = sortX(randomPoints(n));
+    for (int i = 0; i < points.size(); i++) {
+        std::cout << "Point " << i << ": (" << points[i].x << ", " << points[i].y << ")" << std::endl;
     }
 
-    // Sort points by their x-values
-    sortArrayByX(points);
+    std::vector<Point> closest = closestPair(points, 0, n);
+    std::cout << "Closest Pair: (" << closest[0].x << ", " << closest[0].y << ") and (" << closest[1].x << ", " << closest[1].y << ")" << std::endl;
 
-    // Call closest pairs on the points
-    closestPairs(points);
+    std::vector<Point> closestParallel = closestPairNaiveParallel(points, 0, n);
+    std::cout << "Closest Pair Parallel: (" << closestParallel[0].x << ", " << closestParallel[0].y << ") and (" << closestParallel[1].x << ", " << closestParallel[1].y << ")" << std::endl;
+
+    std::vector<Point> closestIdealParallel = closestPairIdealParallel(points, 0, n);
+    std::cout << "Closest Pair Ideal Parallel: (" << closestIdealParallel[0].x << ", " << closestIdealParallel[0].y << ") and (" << closestIdealParallel[1].x << ", " << closestIdealParallel[1].y << ")" << std::endl;
+
+    std::vector<Point> brute = bruteForce(points);
+    std::cout << "Brute Force: (" << brute[0].x << ", " << brute[0].y << ") and (" << brute[1].x << ", " << brute[1].y << ")" << std::endl;
+
+    performanceTest();
 }

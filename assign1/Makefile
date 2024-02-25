@@ -11,5 +11,8 @@ clean:
 	rm -f inverseMatrix closestPairs
 
 # Test
-test: inverseMatrix
+testInverse: inverseMatrix
 	CILK_NWORKERS=6 ./inverseMatrix
+
+testClosest: closestPairs
+	CILK_NWORKERS=6 ./closestPairs
