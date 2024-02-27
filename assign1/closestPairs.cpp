@@ -21,6 +21,18 @@ struct Point {
     bool operator<(const Point &p) const {
         return y < p.y;
     }
+
+    bool operator>(const Point &p) const {
+        return y > p.y;
+    }
+
+    bool operator<=(const Point &p) const {
+        return y <= p.y;
+    }
+
+    bool operator>=(const Point &p) const {
+        return y >= p.y;
+    }
 };
 
 /**
@@ -45,7 +57,7 @@ std::vector<Point> sortY(std::vector<Point> points) {
  * Param: points - Array of points where all coordinates are pairwise distinct (unique)
  * Returns: Array of two points that are closest to each other
 */
-std::vector<Point> closestPair(std::vector<Point> points, int start, int end) {
+std::vector<Point> closestPair(std::vector<Point>& points, int start, int end) {
     // Base Case: If there are only two points, return them
     std::vector<Point> pair;
     if (end - start == 2) {
@@ -103,7 +115,7 @@ std::vector<Point> closestPair(std::vector<Point> points, int start, int end) {
  * Param: points - Array of points where all coordinates are pairwise distinct (unique)
  * Returns: Array of two points that are closest to each other
 */
-std::vector<Point> closestPairNaiveParallel(std::vector<Point> points, int start, int end) {
+std::vector<Point> closestPairNaiveParallel(std::vector<Point> &points, int start, int end) {
     // Base Case: If there are only two points, return them
     std::vector<Point> pair;
     if (end - start == 2) {
@@ -157,167 +169,132 @@ std::vector<Point> closestPairNaiveParallel(std::vector<Point> points, int start
     return pair;
 }
 
-void merge(int* data, int istart, int mid, int iend)
-{
-	int n = iend - istart + 1 ;
-	int k = mid - istart + 1 ;
-	int m = n - k ;
-	int indexA = 0, indexB = 0, indexC = 0 ;
-	int i ;
-	int* a = &data[istart] ;
-	int* b = &data[mid+1] ;
-	int* c = (int *)malloc(sizeof(int)*n);
+void merge(Point* data, int istart, int mid, int iend) {
+    int n = iend - istart + 1;
+    int k = mid - istart + 1;
+    int m = n - k;
+    int indexA = 0, indexB = 0, indexC = 0;
+    int i;
+    Point* a = &data[istart];
+    Point* b = &data[mid + 1];
+    Point* c = (Point*)malloc(sizeof(Point) * n);
 
-	while(indexA < k && indexB < m) {
-	if(a[indexA] <= b[indexB]) 
-	{
-		c[indexC] = a[indexA] ;
-		indexA++ ;
-		indexC++ ;
-	} 
-	else 
-	{
-	c[indexC] = b[indexB] ;
-	indexB++ ;
-	indexC++ ;
-	}
-	}
-	if(indexA >= k) 
-	{
-		for(i = 0 ; i < n-indexC ; i++) 
-		{
-			c[indexC+i] = b[indexB+i] ;
-		}
-	} 
-	else 
-	{
-		for(i = 0 ; i < n-indexC ; i++) 
-		{
-			c[indexC+i] = a[indexA+i] ;
-		}
-	}
-
-	for(i = 0 ; i < n ; i++) 
-	{
-		data[istart+i] = c[i] ;
-	}
-
-	free(c) ;
-}
-
-/*strict less and equal*/
-int binarysearch(int *data, int low, int high, int key)
- {
-         int middle;
-         int istart = low, iend = high + 1;
-         while ( istart < iend )
-         {
-                  middle = istart + ( iend - istart )/2;
-		if ( data[middle] <= key)
-			istart = middle + 1;
-		else
-			iend = middle;
-         }
-         return istart;
-
- }
-
-void parallel_submerge(int *c, int *data, int lowx, int highx, int lowy, int highy, int sp)
-{
-
-	int k = highx - lowx + 1 ;
-	int m = highy - lowy + 1 ;
-	int indexA = 0, indexB = 0, indexC = sp ;
-	int i ;
-	int* a = &data[lowx] ;
-	int* b = &data[lowy] ;
-
-	while(indexA < k && indexB < m) {
-	if(a[indexA] <= b[indexB]) 
-	{
-		c[indexC] = a[indexA] ;
-		indexA++ ;
-		indexC++ ;
-	} 
-	else 
-	{
-	c[indexC] = b[indexB] ;
-	indexB++ ;
-	indexC++ ;
-	}
-	}
-	if(indexA >= k) 
-	{
-		for(i = 0 ; i < m - indexB ; i++) 
-		{
-			c[indexC+i] = b[indexB+i] ;
-		}
-	} 
-	else 
-	{
-		for(i = 0 ; i < k - indexA ; i++) 
-		{
-			c[indexC+i] = a[indexA+i] ;
-		}
-	}
-
-}
-
-int parallel_merge(int* c,int* a, int lowx, int highx, int lowy, int highy, int sp)
- {
-        int mx,my,p,lx,ly;
-	lx = highx - lowx + 1;
-	ly = highy - lowy + 1;
-        if (ly <= basecase || lx <=basecase)
-	{
-		parallel_submerge(c, a, lowx, highx, lowy, highy,sp);
-	}
-	else if (lx < ly)  
-               parallel_merge(c, a, lowy, highy, lowx, highx, sp);
-         else if ( lx == 0 )
-        {
-                         return 0;
-
-        }        else
-                 {     
-                         mx = (lowx + highx)/2;
-                         my = binarysearch(a, lowy, highy, a[mx]);
-                         p = sp + mx - lowx + my - lowy;
-                         c[p]=a[mx];
-                         cilk_spawn parallel_merge(c, a, lowx, mx - 1, lowy, my-1, sp);
-                         parallel_merge(c, a, mx + 1, highx, my, highy, p + 1);
- }
- return 0;
-}
-
-
-
-void serial_mergesort(int* data, int istart, int iend)
-{
-	if(istart < iend) 
-	{
-		int mid = (istart + iend) / 2 ;
-		serial_mergesort(data, istart, mid) ;
-		serial_mergesort(data, mid+1, iend) ;
-                merge(data, istart, mid, iend) ;
+    while (indexA < k && indexB < m) {
+        if (a[indexA].x <= b[indexB].x) {
+            c[indexC] = a[indexA];
+            indexA++;
+            indexC++;
+        } else {
+            c[indexC] = b[indexB];
+            indexB++;
+            indexC++;
         }
+    }
+
+    if (indexA >= k) {
+        for (i = 0; i < n - indexC; i++) {
+            c[indexC + i] = b[indexB + i];
+        }
+    } else {
+        for (i = 0; i < n - indexC; i++) {
+            c[indexC + i] = a[indexA + i];
+        }
+    }
+
+    for (i = 0; i < n; i++) {
+        data[istart + i] = c[i];
+    }
+
+    free(c);
 }
 
-void parallel_mergesort(int* c,int* data, int istart, int iend, int BASE)
-{
-	if (iend - istart <= BASE)
-	{	
-        serial_mergesort( data, istart, iend);
-	}
-	else if(istart < iend) 
-	{
-		int mid = (istart + iend) / 2 ;
-		cilk_spawn parallel_mergesort(c,data, istart, mid,BASE) ;
-		parallel_mergesort(c,data, mid+1, iend,BASE) ;
+int binarysearch(Point* data, int low, int high, int key) {
+    int middle;
+    int istart = low, iend = high + 1;
+    while (istart < iend) {
+        middle = istart + (iend - istart) / 2;
+        if (data[middle].x <= key)
+            istart = middle + 1;
+        else
+            iend = middle;
+    }
+    return istart;
+}
+
+void parallel_submerge(Point* c, Point* data, int lowx, int highx, int lowy, int highy, int sp) {
+    int k = highx - lowx + 1;
+    int m = highy - lowy + 1;
+    int indexA = 0, indexB = 0, indexC = sp;
+    int i;
+    Point* a = &data[lowx];
+    Point* b = &data[lowy];
+
+    while (indexA < k && indexB < m) {
+        if (a[indexA].x <= b[indexB].x) {
+            c[indexC] = a[indexA];
+            indexA++;
+            indexC++;
+        } else {
+            c[indexC] = b[indexB];
+            indexB++;
+            indexC++;
+        }
+    }
+
+    if (indexA >= k) {
+        for (i = 0; i < m - indexB; i++) {
+            c[indexC + i] = b[indexB + i];
+        }
+    } else {
+        for (i = 0; i < k - indexA; i++) {
+            c[indexC + i] = a[indexA + i];
+        }
+    }
+}
+
+
+int parallel_merge(Point* c, Point* a, int lowx, int highx, int lowy, int highy, int sp) {
+    int mx, my, p, lx, ly;
+    lx = highx - lowx + 1;
+    ly = highy - lowy + 1;
+    if (ly <= basecase || lx <= basecase) {
+        parallel_submerge(c, a, lowx, highx, lowy, highy, sp);
+    } else if (lx < ly)
+        parallel_merge(c, a, lowy, highy, lowx, highx, sp);
+    else if (lx == 0) {
+        return 0;
+    } else {
+        mx = (lowx + highx) / 2;
+        my = binarysearch(a, lowy, highy, a[mx].x);
+        p = sp + mx - lowx + my - lowy;
+        c[p] = a[mx];
+        // Assuming parallel_merge is Cilk Plus-style, adjust accordingly if using a different parallelization method
+        cilk_spawn parallel_merge(c, a, lowx, mx - 1, lowy, my - 1, sp);
+        parallel_merge(c, a, mx + 1, highx, my, highy, p + 1);
+    }
+    return 0;
+}
+
+void serial_mergesort(Point* data, int istart, int iend) {
+    if (istart < iend) {
+        int mid = (istart + iend) / 2;
+        serial_mergesort(data, istart, mid);
+        serial_mergesort(data, mid + 1, iend);
+        merge(data, istart, mid, iend);
+    }
+}
+
+void parallel_mergesort(Point* c, Point* data, int istart, int iend, int BASE) {
+    if (iend - istart <= BASE) {
+        serial_mergesort(data, istart, iend);
+    } else if (istart < iend) {
+        int mid = (istart + iend) / 2;
+        cilk_spawn parallel_mergesort(c, data, istart, mid, BASE);
+        parallel_mergesort(c, data, mid + 1, iend, BASE);
         cilk_sync;
-	    parallel_merge(c,data,istart,mid, mid + 1,iend,istart) ;
-		for(int i=istart; i<=iend;i++)
-			data[i] = c[i];
+        parallel_merge(c, data, istart, mid, mid + 1, iend, istart);
+        for (int i = istart; i <= iend; i++)
+            data[i] = c[i];
     }
 }
 
@@ -327,12 +304,9 @@ void parallel_mergesort(int* c,int* data, int istart, int iend, int BASE)
  * Returns: Array of two points that are closest to each other
  * Parallelizes the merge to get to parallelism of O(n/logn)
 */
-std::vector<Point> closestPairIdealParallel(std::vector<Point> points, int start, int end) {
-    std::vector<Point> pair;
+std::vector<Point> closestPairIdealParallel(std::vector<Point> &points, int start, int end) {
     if (end - start == 2) {
-        pair.push_back(points[start]);
-        pair.push_back(points[end]);
-        return pair;
+        return {points[start], points[end]};
     }
 
     // Find value x that divides the set of points into two equal halves
@@ -340,13 +314,14 @@ std::vector<Point> closestPairIdealParallel(std::vector<Point> points, int start
     double x = (points[half - 1].x + points[half].x) / 2;
 
     // Recursively find closest pair in left and right side (L and R)
-    std::vector<Point> L = cilk_spawn closestPairNaiveParallel(points, start, half);
-    std::vector<Point> R = cilk_spawn closestPairNaiveParallel(points, half, end);
+    std::vector<Point> L = cilk_spawn closestPairIdealParallel(points, start, half);
+    std::vector<Point> R = cilk_spawn closestPairIdealParallel(points, half, end);
     cilk_sync;
-    double dL = distance(L[0], L[1]);
-    double dR = distance(R[0], R[1]);
+    double dL = sqrt(pow(L[0].x - L[1].x, 2) + pow(L[0].y - L[1].y, 2));
+    double dR = sqrt(pow(R[0].x - R[1].x, 2) + pow(R[0].y - R[1].y, 2));
 
     // Check if L or R is the closest pair
+    std::vector<Point> pair;
     double d;
     if (dL < dR) {
         pair = L;
@@ -355,36 +330,29 @@ std::vector<Point> closestPairIdealParallel(std::vector<Point> points, int start
         pair = R;
         d = dR;
     }
+    int pointsSize = points.size();
 
-    // Discard all points with xi < x - d or xi > x + d
+    // Discard points with xi < x - d or xi > x + d
     std::vector<Point> S;
-    for (int i = 0; i < points.size(); i++) {
-        if (points[i].x >= x - d && points[i].x <= x + d) {
-            S.push_back(points[i]);
-        }
-    }
+    auto lowerBoundIt = std::lower_bound(points.begin() + start, points.begin() + end, x - d, [](const Point& p, double val) {
+        return p.x < val;
+    });
+    auto upperBoundIt = std::upper_bound(points.begin() + start, points.begin() + end, x + d, [](double val, const Point& p) {
+        return val < p.x;
+    });
+
+    std::copy(lowerBoundIt, upperBoundIt, std::back_inserter(S));
 
     // Sort by y-coordinate using parallel mergesort
-    int* data = (int *)malloc(sizeof(int)*S.size());
-    for (int i = 0; i < S.size(); i++) {
-        data[i] = S[i].y;
-    }
-    int* c = (int *)malloc(sizeof(int)*S.size());
-    int BASE = 32;
-    parallel_mergesort(c,data, 0, S.size()-1, BASE);
-    for (int i = 0; i < S.size(); i++) {
-        S[i].y = data[i];
-    }
-    free(data);
-    free(c);
+    parallel_mergesort(&S[0], &S[0], 0, S.size() - 1, basecase);
 
     // Go through S and for each point, compare it to the next 6 points. Save the closest pair as a point
     for (int i = 0; i < S.size(); i++) {
-        for (int j = i + 1; j < i + 7 && j < S.size(); j++) {
-            if (distance(S[i], S[j]) < d) {
-                d = distance(S[i], S[j]);
-                pair[0] = S[i];
-                pair[1] = S[j];
+        for (int j = i + 1; j < std::min(i + 7, static_cast<int>(S.size())); j++) {
+            double dist = distance(S[i], S[j]);
+            if (dist < d) {
+                d = dist;
+                pair = {S[i], S[j]};
             }
         }
     }
@@ -449,9 +417,9 @@ void performanceTest() {
     // Create LaTeX Table for performance testing
     std::cout << "\\begin{table}[H]" << std::endl;
     std::cout << "\\centering" << std::endl;
-    std::cout << "\\begin{tabular}{|c|c|c|c|}" << std::endl;
+    std::cout << "\\begin{tabular}{|c|c|c|c|c|}" << std::endl;
     std::cout << "\\hline" << std::endl;
-    std::cout << "n & Serial Time (s) & Parallel Time (s) & Improved Parallel Time (s) \\\\" << std::endl;
+    std::cout << "n & Serial Time (s) & Parallel Time (s) & Improved Parallel Time (s) & Speedup \\\\" << std::endl;
     for (int n = 16; n <= 65536; n *= 2) {
         std::vector<Point> points = sortX(randomPoints(n));
         auto start = std::chrono::high_resolution_clock::now();
@@ -472,7 +440,7 @@ void performanceTest() {
         time = end - start;
         double closestPairIdealParallelTime = time.count();
 
-        std::cout << n << " & " << std::fixed << std::setprecision(6) << closestPairTime << " & " << closestPairParallelTime << " & " << closestPairIdealParallelTime << " \\\\" << std::endl;
+        std::cout << n << " & " << std::fixed << std::setprecision(6) << closestPairTime << " & " << closestPairParallelTime << " & " << closestPairIdealParallelTime << " & " << int(closestPairTime / closestPairIdealParallelTime) << " \\\\" << std::endl;
         fprintf(fp, "%d,%d,%f,%f,%f\n", n, 32, closestPairTime, closestPairParallelTime, closestPairIdealParallelTime);
     }
     std::cout << "\\hline" << std::endl;

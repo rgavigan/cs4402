@@ -35,23 +35,54 @@ void printMatrix(const std::vector<std::vector<double>>& M, std::string title = 
  * Computation: M1 * M2
 */
 void multiplyMatricesParallel(std::vector<std::vector<double>>& M1, std::vector<std::vector<double>>& M2, int startRowM1, int startColM1, int startRowM2, int startColM2, int size) {
-    // Parallelized matrix multiplication
+    const int blockSize = 16; // Adjust this value to match your CPU's cache line size
     std::vector<std::vector<double>> temp(size, std::vector<double>(size, 0));
-    cilk_for (int i = 0; i < size; i++) {
-        cilk_for (int j = 0; j < size; j++) {
-            double sum = 0.0;
-            for (int k = 0; k < size; k++) {
-                sum += M1[startRowM1 + i][startColM1 + k] * M2[startRowM2 + k][startColM2 + j];
+
+    cilk_for (int i = 0; i < size; i += blockSize) {
+        cilk_for (int j = 0; j < size; j += blockSize) {
+            for (int k = 0; k < size; k += blockSize) {
+                for (int ii = i; ii < std::min(i + blockSize, size); ++ii) {
+                    for (int jj = j; jj < std::min(j + blockSize, size); ++jj) {
+                        double sum = 0.0;
+                        for (int kk = k; kk < std::min(k + blockSize, size); ++kk) {
+                            sum += M1[startRowM1 + ii][startColM1 + kk] * M2[startRowM2 + kk][startColM2 + jj];
+                        }
+                        temp[ii][jj] += sum;
+                    }
+                }
             }
-            temp[i][j] = sum;
         }
     }
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
+
+    cilk_for (int i = 0; i < size; i++) {
+        cilk_for (int j = 0; j < size; j++) {
             M1[startRowM1 + i][startColM1 + j] = temp[i][j];
         }
     }
-    return;
+}
+
+/**
+ * Method to divide-and-conquer on multiplyMatricesParallel
+*/
+void multiplyMatrices(std::vector<std::vector<double>>& M1, std::vector<std::vector<double>>& M2, int startRowM1, int startColM1, int startRowM2, int startColM2, int size) {
+    // Base Case: When the matrix is small enough
+    if (size <= 128) {
+        multiplyMatricesParallel(M1, M2, startRowM1, startColM1, startRowM2, startColM2, size);
+        return;
+    }
+    int mid = size / 2;
+
+    // Divide and Conquer
+    cilk_spawn multiplyMatrices(M1, M2, startRowM1, startColM1, startRowM2, startColM2, mid);                    // A11 * B11
+    cilk_spawn multiplyMatrices(M1, M2, startRowM1, startColM1 + mid, startRowM2 + mid, startColM2, mid);        // A12 * B21
+    cilk_spawn multiplyMatrices(M1, M2, startRowM1, startColM1, startRowM2, startColM2 + mid, mid);              // A11 * B12
+    multiplyMatrices(M1, M2, startRowM1, startColM1 + mid, startRowM2 + mid, startColM2 + mid, mid);  // A12 * B22
+    cilk_sync;
+    cilk_spawn multiplyMatrices(M1, M2, startRowM1 + mid, startColM1, startRowM2, startColM2, mid);              // A21 * B11
+    cilk_spawn multiplyMatrices(M1, M2, startRowM1 + mid, startColM1 + mid, startRowM2 + mid, startColM2, mid);  // A22 * B21
+    cilk_spawn multiplyMatrices(M1, M2, startRowM1 + mid, startColM1, startRowM2, startColM2 + mid, mid);        // A21 * B12
+    multiplyMatrices(M1, M2, startRowM1 + mid, startColM1 + mid, startRowM2 + mid, startColM2 + mid, mid);      // A22 * B22
+    cilk_sync;                                                                                                    // Syncing Parallelism
 }
 
 /**
@@ -61,14 +92,14 @@ void multiplyMatricesParallel(std::vector<std::vector<double>>& M1, std::vector<
 void getLowerTriangularInverseParallel(std::vector<std::vector<double>> &M, int B, int startRow, int startCol, int endRow, int endCol) {
     // Base Case: Forward substitution when the matrix is small enough
     if (endRow - startRow <= B) {
-        for (int i = startRow; i < endRow; i++) {
-            for (int j = startCol; j <= i; j++) {
+        cilk_for (int i = startRow; i < endRow; i++) {
+            cilk_for (int j = startCol; j <= i; j++) {
                 if (i == j) {
                     M[i][j] = 1 / M[i][j];                                                                // Diagonal Elements
                 }
                 else {
                     double sum = 0;
-                    for (int k = j; k < i; k++) {
+                    cilk_for (int k = j; k < i; k++) {
                         sum += M[i][k] * M[k][j];                                                         // Summation
                     }
                     M[i][j] = -sum / M[i][i];                                                             // Off-Diagonal Elements
@@ -84,8 +115,8 @@ void getLowerTriangularInverseParallel(std::vector<std::vector<double>> &M, int 
     cilk_spawn getLowerTriangularInverseParallel(M, B, startRow + mid, startCol + mid, endRow, endCol);   // A3 inverse
     cilk_sync;                                                                                            // Syncing Parallelism
 
-    // Computing the multiplication for A2
-    multiplyMatricesParallel(M, M, startRow + mid, startCol, startRow, startCol, mid);                    // A_2 * A_1^-1
+    // Computing the multiplication for A2 (A_2 * A_1^-1)
+    cilk_spawn multiplyMatrices(M, M, startRow + mid, startCol, startRow, startCol, mid);                    // A_2 * A_1^-1
 
     // Create a temporary matrix to hold A3
     std::vector<std::vector<double>> M3(mid, std::vector<double>(mid, 0));
@@ -96,10 +127,10 @@ void getLowerTriangularInverseParallel(std::vector<std::vector<double>> &M, int 
             M3[i][j] = M[startRow + mid + i][startCol + mid + j];
         }
     }
-
-    multiplyMatricesParallel(M3, M, 0, 0, startRow + mid, startCol, mid);                                // M3 = A3^-1 * (A_2 * A_1^-1)
-    for (int i = 0; i < mid; i++) {
-        for (int j = 0; j < mid; j++) {
+    cilk_sync;
+    multiplyMatrices(M3, M, 0, 0, startRow + mid, startCol, mid);                                // M3 = A3^-1 * (A_2 * A_1^-1)
+    cilk_for (int i = 0; i < mid; i++) {
+        cilk_for (int j = 0; j < mid; j++) {
             M[startRow + mid + i][startCol + j] = -M3[i][j];                                             // A3^-1 * (A_2 * A_1^-1)
         }
     }
