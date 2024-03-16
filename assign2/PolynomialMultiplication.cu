@@ -10,24 +10,22 @@
 #define GPU_DEVICE 0
 #define EPSILON 1e-6
 
-/**
- * Univariate Polynomial Multiplication With ceil((2n+1)/B) thread blocks of B threads each
-*/
+// CUDA Parallel Polynomial Multiplication
 __global__ void polynomialMultiplication(int* A, int* B, int* C, int n) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (tid <= 2 * n) {
-        for (int i = 0; i <= tid; i++) {
-            C[tid] += A[i] * B[tid - i];
+    int p = blockIdx.x * blockDim.x + threadIdx.x;
+    if (p <= 2 * n) {
+        C[p] = 0;
+        for (int t = max(0, n - p); t <= min(n, 2 * n - p); t++) {
+            C[p] += A[t + p - n] * B[n - t];
         }
     }
 }
 
-void polynomialMultiplicationSerial(int* A, int* B, int* C, int N) {
-    for (int i = 0; i <= 2 * N; i++) {
-        C[i] = 0;
-        for (int j = 0; j <= i; j++) {
-            C[i] += A[j] * B[i - j];
+void polynomialMultiplicationSerial(int* A, int* B, int* C, int n) {
+    for (int p = 0; p <= 2 * n; p++) {
+        C[p] = 0;
+        for (int t = max(0, n - p); t <= min(n, 2 * n - p); t++) {
+            C[p] += A[t + p - n] * B[n - t];
         }
     }
 }
@@ -45,79 +43,76 @@ int main() {
     int B_values[] = {32, 64, 128, 256, 512};
     int N_values[] = {(int)pow(2, 14), (int)pow(2, 16)};
 
-    for (int i = 0; i < sizeof(B_values) / sizeof(int); i++) {
-        for (int j = 0; j < sizeof(N_values) / sizeof(int); j++) {
-            int B1 = B_values[i];
-            int N = N_values[j];
+    printf("\\begin{table}[ht]\n");
+    printf("\\centering\n");
+    printf("\\begin{tabular}{|c|c|c|c|c|}\n");
+    printf("\\hline\n");
+    printf("N & B & GPU Time (ms) & CPU Time (ms) & Speedup \\\\\n");
+    printf("\\hline\n");
 
-            // Allocate memory on the host
-            int* A = (int*)malloc((2 * N + 1) * sizeof(int));
-            int* B = (int*)malloc((2 * N + 1) * sizeof(int));
+    // Run the kernel for different values of B and N and print out GPU vs CPU time
+    for (int j = 0; j < 2; j++) {
+        int N = N_values[j];
+        for (int i = 0; i < 5; i++) {
+            int B = B_values[i];
+            int* A = (int*)malloc((N + 1) * sizeof(int));
+            int* Br = (int*)malloc((N + 1) * sizeof(int));
             int* C = (int*)malloc((2 * N + 1) * sizeof(int));
-
-            // Allocate memory for the CPU result
-            int* C_cpu = (int*)malloc((2 * N + 1) * sizeof(int));
-
-            // Initialize A and B arrays with random values of {-1, 0, 1}
-            for (int i = 0; i <= 2 * N; i++) {
-                A[i] = (rand() % 3) - 1;
-                B[i] = (rand() % 3) - 1;
+            int* C_serial = (int*)malloc((2 * N + 1) * sizeof(int));
+            
+            // Random values from {-1, 0, 1}
+            for (int i = 0; i < N + 1; i++) {
+                A[i] = rand() % 3 - 1;
+                Br[i] = rand() % 3 - 1;
             }
 
-            // Allocate memory on the device
-            int* d_A, *d_B, *d_C;
-            cudaMalloc((void**)&d_A, (2 * N + 1) * sizeof(int));
-            cudaMalloc((void**)&d_B, (2 * N + 1) * sizeof(int));
-            cudaMalloc((void**)&d_C, (2 * N + 1) * sizeof(int));
+            int* d_A;
+            int* d_B;
+            int* d_C;
+            cudaMalloc(&d_A, (N + 1) * sizeof(int));
+            cudaMalloc(&d_B, (N + 1) * sizeof(int));
+            cudaMalloc(&d_C, (2 * N + 1) * sizeof(int));
 
-            // Copy input data from host to device
-            cudaMemcpy(d_A, A, (2 * N + 1) * sizeof(int), cudaMemcpyHostToDevice);
-            cudaMemcpy(d_B, B, (2 * N + 1) * sizeof(int), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_A, A, (N + 1) * sizeof(int), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_B, Br, (N + 1) * sizeof(int), cudaMemcpyHostToDevice);
 
-            // Launch kernel
-            int numBlocks = ceil((2 * N + 1) / B1);
+            struct timeval start, end;
+            gettimeofday(&start, NULL);
+            polynomialMultiplication<<<(2 * N + B - 1) / B, B>>>(d_A, d_B, d_C, N);
+            cudaDeviceSynchronize();
+            gettimeofday(&end, NULL);
+            float gpu_time = (end.tv_sec - start.tv_sec) * 1e6 * 1000;
+            gpu_time = (gpu_time + (end.tv_usec - start.tv_usec)) * 1e-6;
 
-            cudaEvent_t start, stop;
-            cudaEventCreate(&start);
-            cudaEventCreate(&stop);
-
-            cudaEventRecord(start);
-            polynomialMultiplication<<<numBlocks, B1>>>(d_A, d_B, d_C, N);
-            cudaEventRecord(stop);
-
-            cudaEventSynchronize(stop);
-            float milliseconds = 0;
-            cudaEventElapsedTime(&milliseconds, start, stop);
-
-            // Run the serial version
-            clock_t start_cpu = clock();
-            // Run the serial version
-            polynomialMultiplicationSerial(A, B, C_cpu, N);
-            clock_t end_cpu = clock();
-            double cpu_time = ((double) (end_cpu - start_cpu)) * 1000 / CLOCKS_PER_SEC;
-
-            // Copy result from device to host
             cudaMemcpy(C, d_C, (2 * N + 1) * sizeof(int), cudaMemcpyDeviceToHost);
-            
-            // Verify the results
-            bool resultsMatch = verifyResults(C, C_cpu, N);
-            printf("B = %d, N = %d, GPU Runtime: %f ms, CPU Runtime: %f ms, Results Match: %s\n", B1, N, milliseconds, cpu_time, resultsMatch ? "Yes" : "No");
 
-            // Free device memory
+            gettimeofday(&start, NULL);
+            polynomialMultiplicationSerial(A, Br, C_serial, N);
+            gettimeofday(&end, NULL);
+            float time = (end.tv_sec - start.tv_sec) * 1e6 * 1000;
+            time = (time + (end.tv_usec - start.tv_usec)) * 1e-6;
+            bool valid = verifyResults(C, C_serial, N);
+            if (valid) {
+                printf("%d & %d & %.1e & %.1e & %.3f \\\\\n", N, B, gpu_time, time, time / gpu_time);
+            }
+            else {
+                printf("%d & %d & %.1e & %.1e & %.3f* \\\\\n", N, B, gpu_time, time, time / gpu_time);
+            }
+
+            free(A);
+            free(Br);
+            free(C);
+            free(C_serial);
             cudaFree(d_A);
             cudaFree(d_B);
             cudaFree(d_C);
 
-            // Free host memory
-            free(A);
-            free(B);
-            free(C);
-            free(C_cpu);
-
-            cudaEventDestroy(start);
-            cudaEventDestroy(stop);
         }
     }
 
-    return 0;
+    printf("\\hline\n");
+    printf("\\end{tabular}\n");
+    printf("\\caption{GPU vs CPU Time Comparison}\n");
+    printf("\\label{tab:comparison}\n");
+    printf("\\end{table}\n");
 }
