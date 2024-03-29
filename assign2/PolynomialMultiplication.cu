@@ -12,23 +12,53 @@
 
 // CUDA Parallel Polynomial Multiplication
 __global__ void polynomialMultiplication(int* A, int* B, int* C, int n) {
-    int p = blockIdx.x * blockDim.x + threadIdx.x;
-    if (p <= 2 * n) {
-        C[p] = 0;
-        for (int t = max(0, n - p); t <= min(n, 2 * n - p); t++) {
-            C[p] += A[t + p - n] * B[n - t];
+    extern __shared__ int shared[];
+    int* A_shared = shared;
+    int* B_shared = shared + blockDim.x;
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int p_start = max(0, n - idx);
+    int p_end = min(n, 2 * n - idx);
+
+    int result = 0;
+
+    // Load data into shared memory
+    if (p_start <= p_end) {
+        for (int t = p_start; t <= p_end; t += blockDim.x) {
+            int t_idx = t + tid;
+            A_shared[tid] = (t_idx <= n) ? A[t_idx] : 0;
+            B_shared[tid] = (idx - n + t_idx <= n) ? B[idx - n + t_idx] : 0;
+            __syncthreads();
+
+            // Perform multiplication and reduction
+            for (int i = 0; i < min(blockDim.x, p_end - t + 1); i++) {
+                result += A_shared[i] * B_shared[blockDim.x - 1 - i];
+            }
+            __syncthreads();
         }
+    }
+
+    // Write result to global memory
+    if (idx <= 2 * n) {
+        C[idx] = result;
     }
 }
 
+// Serial Polynomial Multiplication (Same as above just only on CPU)
 void polynomialMultiplicationSerial(int* A, int* B, int* C, int n) {
-    for (int p = 0; p <= 2 * n; p++) {
-        C[p] = 0;
-        for (int t = max(0, n - p); t <= min(n, 2 * n - p); t++) {
-            C[p] += A[t + p - n] * B[n - t];
+    for (int idx = 0; idx <= 2 * n; idx++) {
+        int p_start = max(0, n - idx);
+        int p_end = min(n, 2 * n - idx);
+        int result = 0;
+        for (int t = p_start; t <= p_end; t++) {
+            result += A[t] * B[idx - n + t];
         }
+        C[idx] = result;
     }
 }
+
 
 bool verifyResults(int* C1, int* C2, int N) {
     for (int i = 0; i < 2 * N; i++) {
@@ -93,10 +123,10 @@ int main() {
             time = (time + (end.tv_usec - start.tv_usec)) * 1e-6;
             bool valid = verifyResults(C, C_serial, N);
             if (valid) {
-                printf("%d & %d & %.1e & %.1e & %.3f \\\\\n", N, B, gpu_time, time, time / gpu_time);
+                printf("%d & %d & %.1e & %.1e & %.1e \\\\\n", N, B, gpu_time, time, time / gpu_time);
             }
             else {
-                printf("%d & %d & %.1e & %.1e & %.3f* \\\\\n", N, B, gpu_time, time, time / gpu_time);
+                printf("%d & %d & %.1e & %.1e & %.1e \\\\\n", N, B, gpu_time, time, time / gpu_time);
             }
 
             free(A);
